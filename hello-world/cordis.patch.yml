@@ -1,0 +1,9 @@
+# dsh-hello-world bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: hello-world
+    name: "dsh-hello-world"
+    config:
+      greeting: "Привет из dsh-hello-world!"

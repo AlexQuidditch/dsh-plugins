@@ -1,0 +1,29 @@
+# dsh-scope-router bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: scope-router
+    name: "dsh-scope-router"
+    config:
+      projectRoots:
+        - "/Users/alex_quidditch/projects/platform"
+      coreFiles:
+        - "AGENTS.md"
+        - ".agents/shared/plugin-architecture-primer.md"
+        - ".agents/rules/always.md"
+      layerFiles:
+        backend:
+          - ".agents/shared/golden-backend-assembly.md"
+        frontend:
+          - ".agents/shared/golden-frontend-assembly.md"
+          - ".agents/shared/domain-fe-contribution.md"
+      domainsDir: "packages/domains"
+      domainCandidates:
+        - "packages/domains/{domain}/AGENTS.md"
+        - "packages/domains/{domain}/src/agents/AGENTS.md"
+        - "packages/domains/{domain}/README.md"
+        - "apps/{domain}/AGENTS.md"
+      maxBundleChars: 90000
+      probeTool: true
+      log: true
