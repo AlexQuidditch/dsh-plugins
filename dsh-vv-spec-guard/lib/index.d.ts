@@ -1,21 +1,3 @@
-/**
- * dsh-vv-spec-guard, host half.
- *
- * vv SpecGuard port: deterministic host-side verification of .vvoc spec-package
- * artifacts. Two surfaces:
- *
- * 1. A `fs/observed` listener that logs a bounded verdict whenever the agent
- *    touches an active spec/plan/design-context XML (archived files excluded).
- *    The observation event is notification-only — it cannot decorate a tool
- *    result — so the verdict goes to the plugin logger, and the model reaches
- *    the same engine explicitly through the probe tool below.
- * 2. A model-facing probe tool `spec_guard_lint` (the same pattern as
- *    dsh-scope-router's probe): pass a spec-package path or a single XML file
- *    path and get the deterministic verdict back, with the sibling spec joined
- *    for plan cross-file rules.
- *
- * Both surfaces share the pure engine in ./lint.ts, which the vvoc CLI reuses.
- */
 import type { Context } from '@deepseek-ai/cordis';
 import { type LintVerdict } from './lint.js';
 export declare const name = "vv-spec-guard";

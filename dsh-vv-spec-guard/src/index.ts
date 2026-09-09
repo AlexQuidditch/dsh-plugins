@@ -16,6 +16,9 @@
  *
  * Both surfaces share the pure engine in ./lint.ts, which the vvoc CLI reuses.
  */
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { lintPlan, lintSpec, type LintVerdict } from './lint.js'
 
@@ -88,23 +91,31 @@ export function apply(ctx: Context, config: VvSpecGuardConfig = {}): void {
   // The plugin runs host-side (unsandboxed), so the marker lands next to the
   // vv-analytics directory and costs one small write per boot.
   const markerPath = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'vv-spec-guard-boot.json')
-  const marker = { ts: new Date().toISOString(), applied: false, toolsImmediate: false, registeredImmediately: false, deferred: false, error: undefined as string | undefined }
+  const marker = { ts: new Date().toISOString(), applied: false, toolsImmediate: false, registeredImmediately: false, deferred: false, registeredDeferred: false, error: undefined as string | undefined }
+  const writeMarker = (): void => {
+    try {
+      mkdirSync(dirname(markerPath), { recursive: true })
+      writeFileSync(markerPath, `${JSON.stringify(marker, null, 2)}\n`)
+    } catch {
+      // diagnostics must never break the boot
+    }
+  }
   try {
-    applyBody(ctx, config, marker)
+    applyBody(ctx, config, marker, writeMarker)
     marker.applied = true
   } catch (error) {
     marker.error = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error)
     try { ctx.logger.error('[vv-spec-guard] apply failed: %s', marker.error) } catch { /* logger unavailable */ }
   }
-  try {
-    mkdirSync(dirname(markerPath), { recursive: true })
-    writeFileSync(markerPath, `${JSON.stringify(marker, null, 2)}\n`)
-  } catch {
-    // diagnostics must never break the boot
-  }
+  writeMarker()
 }
 
-function applyBody(ctx: Context, config: VvSpecGuardConfig, marker: { toolsImmediate: boolean; registeredImmediately: boolean; deferred: boolean }): void {
+function applyBody(
+  ctx: Context,
+  config: VvSpecGuardConfig,
+  marker: { toolsImmediate: boolean; registeredImmediately: boolean; deferred: boolean; registeredDeferred: boolean },
+  writeMarker: () => void,
+): void {
   if (config.enabled === false) return
   const verdictMaxChars = config.verdictMaxChars ?? 200
 
@@ -192,9 +203,11 @@ function applyBody(ctx: Context, config: VvSpecGuardConfig, marker: { toolsImmed
       // Deferred: the preset/bundle boot order may apply this row before the
       // host tools registry mounts; inject waits and registers on arrival.
       ctx.inject(['tools'], (injected) => {
-        const tools = injected.tools as ToolsFace
+        const tools = injected.get('tools') as ToolsFace
         ctx.effect(() => registerProbe(tools))
         marker.deferred = true
+        marker.registeredDeferred = true
+        writeMarker()
       })
     }
   }
