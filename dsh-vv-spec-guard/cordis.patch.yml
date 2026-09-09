@@ -1,0 +1,11 @@
+# dsh-vv-spec-guard bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: vv-spec-guard
+    name: "dsh-vv-spec-guard"
+    config:
+      enabled: true
+      probeTool: true
+      verdictMaxChars: 200

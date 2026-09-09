@@ -1,0 +1,13 @@
+# dsh-vv-analytics bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# Records one JSONL line per completed model step into
+# $DSH_HOME/vv-analytics/usage-YYYY-MM.jsonl (local-only telemetry). Disable
+# entirely from the profile's cordis.patch.yml: - id: vv-analytics, disabled: true.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: vv-analytics
+    name: "dsh-vv-analytics"
+    config:
+      enabled: true

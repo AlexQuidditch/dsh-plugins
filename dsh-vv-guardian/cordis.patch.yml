@@ -1,0 +1,19 @@
+# dsh-vv-guardian bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# Auto-approves routine low-risk sandbox escalations (workspace-write);
+# danger-full-access and every other approval kind still reaches the human
+# answerer (and fails closed when none answers).
+#
+# Disable entirely from the profile's cordis.patch.yml:
+#   - id: vv-guardian
+#     disabled: true
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: vv-guardian
+    name: "dsh-vv-guardian"
+    config:
+      enabled: true
+      autoApprove:
+        - workspace-write

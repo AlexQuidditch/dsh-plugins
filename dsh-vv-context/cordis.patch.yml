@@ -1,0 +1,7 @@
+# dsh-vv-context bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: vv-context
+    name: "dsh-vv-context"

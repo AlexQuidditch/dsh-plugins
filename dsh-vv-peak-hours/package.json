@@ -1,0 +1,40 @@
+{
+  "name": "dsh-vv-peak-hours",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH plugin bundle: vv PeakHours — host gate that warns (soft) or blocks (hard) model calls during provider peak-price windows",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/schedule.js",
+    "lib/index.d.ts",
+    "lib/schedule.d.ts",
+    "cordis.patch.yml"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@types/node": "^24.13.3",
+    "typescript": "^6.0.3"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,31 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 22px;
+  border-radius: 11px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.neutral {
+  color: var(--ds-text-tertiary, #8b8e99);
+  background: var(--ds-surface-secondary, rgba(140, 145, 160, 0.12));
+}
+
+.green {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.14);
+}
+
+.yellow {
+  color: #9a6b00;
+  background: rgba(214, 158, 46, 0.16);
+}
+
+.red {
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.14);
+}

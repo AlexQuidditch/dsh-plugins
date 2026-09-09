@@ -1,0 +1,19 @@
+# dsh-vv-peak-hours bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# deepseek default windows: 01:00–04:00 and 06:00–10:00 UTC (the same windows
+# dsh-peak-indicator renders in the header). Disable entirely from the
+# profile's cordis.patch.yml: - id: vv-peak-hours, disabled: true.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+- insert:
+  - id: vv-peak-hours
+    name: "dsh-vv-peak-hours"
+    config:
+      enabled: true
+      mode: soft
+      schedules:
+        deepseek:
+          windows:
+            - { start: "01:00", end: "04:00", tz: "UTC" }
+            - { start: "06:00", end: "10:00", tz: "UTC" }

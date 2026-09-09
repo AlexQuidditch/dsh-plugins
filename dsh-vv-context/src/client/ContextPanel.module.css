@@ -1,0 +1,119 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  height: 22px;
+  border-radius: 11px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  color: var(--ds-text-tertiary, #8b8e99);
+  background: var(--ds-surface-secondary, rgba(140, 145, 160, 0.12));
+}
+
+.pill:hover {
+  color: var(--ds-text-primary, #1d1f27);
+  background: var(--ds-surface-tertiary, rgba(140, 145, 160, 0.2));
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 56px 16px 16px;
+  background: rgba(10, 12, 18, 0.28);
+}
+
+.panel {
+  width: 340px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--ds-border, rgba(120, 126, 145, 0.24));
+  background: var(--ds-surface-primary, #ffffff);
+  color: var(--ds-text-primary, #1d1f27);
+  box-shadow: 0 12px 32px rgba(10, 12, 18, 0.22);
+  padding: 14px 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.close {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ds-text-tertiary, #8b8e99);
+  padding: 2px 6px;
+}
+
+.section {
+  margin-top: 10px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ds-text-tertiary, #8b8e99);
+  margin: 0 0 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.rowLabel {
+  flex: 0 0 150px;
+  color: var(--ds-text-secondary, #4a4f5e);
+}
+
+.rowValue {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.barTrack {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ds-surface-secondary, rgba(140, 145, 160, 0.14));
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ds-accent, #4f7cff);
+}
+
+.footer {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ds-text-tertiary, #8b8e99);
+}
