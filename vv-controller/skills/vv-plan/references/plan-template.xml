@@ -1,0 +1,71 @@
+<!-- Unique-tag: repeating entities use M-*, T-NNN, AC-NNN, wave-N, file-*, dep-*. Replace EXAMPLE ids. Wrappers stay generic. No attributes. -->
+<plan>
+  <spec></spec>
+  <design-context></design-context>
+  <created></created>
+  <status>draft</status>
+
+  <meta>
+    <summary></summary>
+    <waves></waves>
+    <affected_modules></affected_modules>
+    <complexity></complexity>
+    <!-- Closeout DoD profile for ./scripts/verify-overlay.sh. Default baseline when omitted/empty.
+         Allowed: baseline | domain-feature | platform-extension | migration | app-assembly -->
+    <verify_overlay_profile>baseline</verify_overlay_profile>
+  </meta>
+
+  <architecture>
+    <M-EXAMPLE>
+      <purpose></purpose>
+      <file-EXAMPLE>
+        <path></path>
+        <role></role>
+      </file-EXAMPLE>
+      <contract>
+      </contract>
+      <depends_on>
+      </depends_on>
+    </M-EXAMPLE>
+  </architecture>
+
+  <tasks>
+    <wave-1>
+      <goal></goal>
+      <T-001>
+        <title></title>
+        <file></file>
+        <status>pending</status>
+        <description></description>
+        <depends_on>
+        </depends_on>
+        <snippet><![CDATA[
+// START_MODULE_CONTRACT
+//   PURPOSE: [What this module does]
+//   SCOPE: [Operations included]
+//   DEPENDS: [Module dependencies]
+//   LINKS: [Graph nodes]
+// END_MODULE_CONTRACT
+// START_MODULE_MAP
+//   ExampleType — [one-line description]
+// END_MODULE_MAP
+// START_CHANGE_SUMMARY
+//   LAST_CHANGE: [v1.0.0 — initial]
+// END_CHANGE_SUMMARY
+
+/** behavior description */
+export type ExampleType = {
+  /** field purpose */
+  field: string;
+};
+]]></snippet>
+        <acceptance>
+          <AC-001></AC-001>
+        </acceptance>
+        <verification>
+          <command></command>
+        </verification>
+      </T-001>
+    </wave-1>
+  </tasks>
+</plan>

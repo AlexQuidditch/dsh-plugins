@@ -1,0 +1,48 @@
+<!--
+  design-context.xml is optional curated design memory.
+  Unique-tag: repeating entities use D-*, A-*, DF-*, SC-*, ALT-*, XC-* names.
+  Replace EXAMPLE ids. Wrappers stay generic. No attributes.
+  spec.xml remains normative.
+-->
+<design-context>
+  <decisions>
+    <D-EXAMPLE>
+      <topic></topic>
+      <choice></choice>
+      <rationale></rationale>
+      <alternatives_considered>
+        <ALT-EXAMPLE>
+          <name></name>
+          <reason_rejected></reason_rejected>
+        </ALT-EXAMPLE>
+      </alternatives_considered>
+    </D-EXAMPLE>
+  </decisions>
+  <assumptions>
+    <A-EXAMPLE>
+      <statement></statement>
+      <confidence></confidence>
+      <fragile_if></fragile_if>
+    </A-EXAMPLE>
+  </assumptions>
+  <deferred>
+    <DF-EXAMPLE>
+      <decision></decision>
+      <why_deferred></why_deferred>
+      <revisit_trigger></revisit_trigger>
+    </DF-EXAMPLE>
+  </deferred>
+  <scenarios>
+    <SC-EXAMPLE>
+      <name></name>
+      <context></context>
+      <implications></implications>
+    </SC-EXAMPLE>
+  </scenarios>
+  <external_constraints>
+    <XC-EXAMPLE>
+      <source></source>
+      <impact></impact>
+    </XC-EXAMPLE>
+  </external_constraints>
+</design-context>

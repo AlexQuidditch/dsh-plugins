@@ -1,0 +1,31 @@
+<!-- Unique-tag: repeating entities use C-*, M-*, NG-* names. Replace EXAMPLE ids. Wrappers stay generic. No attributes. -->
+<spec>
+  <status>draft</status>
+  <goal></goal>
+  <architecture></architecture>
+  <tech-stack></tech-stack>
+  <components>
+    <C-EXAMPLE>
+      <name></name>
+      <responsibility></responsibility>
+      <depends-on></depends-on>
+    </C-EXAMPLE>
+  </components>
+  <pseudocode>
+    <M-EXAMPLE>
+      <name></name>
+      <context></context>
+      <logic></logic>
+      <edge-cases></edge-cases>
+    </M-EXAMPLE>
+  </pseudocode>
+  <data-flow></data-flow>
+  <error-handling></error-handling>
+  <testing>
+    <strategy></strategy>
+    <coverage></coverage>
+  </testing>
+  <non-goals>
+    <NG-EXAMPLE></NG-EXAMPLE>
+  </non-goals>
+</spec>
