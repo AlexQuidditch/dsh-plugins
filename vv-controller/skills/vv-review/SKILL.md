@@ -1,34 +1,35 @@
 ---
 name: vv-review
-description: "Review-only рабочий поток: независимые spec- и code-ревьюеры выдают findings по коду/плану, и работа останавливается — никаких правок, пока пользователь явно не попросит фиксы."
-whenToUse: Пользователь хочет разбор и замечания, а не изменения («посмотри», «отревьюй», «найди проблемы»).
+description: Use for review requests — routes to reviewer sub-agents through a vvoc review-only workflow, reports findings, and stops before fixes
 ---
 
-# vv-review
+<skill vv-review>
+<identity>
+You are the vv-review skill. Your job is to route review requests to the appropriate vvoc reviewer sub-agents and present findings. You do NOT implement fixes. You do NOT delegate to implementers. Your output is the review report.
+</identity>
 
-Порт vv-review из vv-opencode: ревью как самостоятельный результат. Ты ничего не правишь — только собираешь независимые вердикты и докладываешь.
+<workflow>
+<rule>Route this request as a review_only vvoc workflow.</rule>
+<rule>Decide what kind of review is needed:
+  - Spec review (vv-spec-reviewer): when checking against a spec or acceptance criteria
+  - Code review (vv-code-reviewer): when checking for bugs, regressions, maintainability, or security
+  - Both: when the request calls for comprehensive review</rule>
+<rule>When the review follows an implementation claim, instruct reviewers to treat missing algorithmic DoD evidence as Important/Unproven: expect `./scripts/verify-overlay.sh baseline` (or `pnpm verify:overlay`) exit 0 per `tests/test_guide.md`, unless the change is docs-only.</rule>
+<rule>Each reviewer prompt MUST include: Read .vvoc/overlays/repo-runtime.md. GRACE gaps on new TypeScript files and unique-tag gaps on new vvoc XML are Important, not style nits. Domain-only work that edits packages/platform is Extra/Wrong.</rule>
+<step>Open one review-only work item with work_item_open before dispatching tracked reviewer sub-agents. Use `mode: "review_only"` and set `requiredReviewers` to `['spec']`, `['code']`, or `['spec', 'code']` based on the selected reviewers.</step>
+<step>Put the VVOC_WORK_ITEM_ID header as the first line of each reviewer sub-agent prompt.</step>
+<step>Collect findings from each required reviewer. In review_only mode, reviewer FAIL is a completed finding result; it does not route to vv-implementer and must not prevent other required reviewers from completing.</step>
+<step>Findings are the FINAL output. Do NOT proceed to fixes without explicit user confirmation.</step>
+<step>Close the work item with work_item_close after the review is complete.</step>
+</workflow>
 
-## Когда использовать
+<finding_format>
+<rule>Present findings with severity and location:</rule>
+<format>[Severity] path:line (symbol/scope) — what is wrong, why it matters, and the expected fix direction</format>
+<severities>Critical: bug, crash, data loss, security issue. Important: missing feature, wrong behavior, spec violation. Minor: style, clarity, improvement suggestion.</severities>
+</finding_format>
 
-- Просьба «отревьюй/проверь/найди проблемы» без запроса на исправления.
-- Проверка готового PR-диффа, реализованного плана или текущего состояния ветки.
-
-## Процедура
-
-1. Определи объект ревью: дифф ветки (`git diff` / `git status`), конкретные файлы, или пакет `.vvoc/specs/<package>/` (тогда ревью ведётся по его spec.xml/plan.xml).
-2. Проверь карту модельных ролей: `./.vvoc/vvoc.json` (проект) или `${DSH_HOME:-~/.dsh}/vv-vvoc.json`; если там задана роль `reviewer` (`{"roles":{"reviewer":"provider/model"}}`) — передай эту модель в параметры `subagent` при спавне ревьюеров.
-3. Запусти ДВА независимых суб-агента через `subagent` (можно параллельно; они не зависят друг от друга):
-   - **spec-reviewer** — соответствие требованиям: спека/ТЗ, acceptance-критерии, границы. Промпт — как в скилле vv-execute, но объект ревью подставь по факту (без ссылки на implementer-отчёт).
-   - **code-reviewer** — баги, регрессии, поддерживаемость, пропущенные тесты. Промпт — как в скилле vv-execute.
-4. Собери оба вердикта. Каждый `FAIL` в этом режиме — это ГОТОВЫЙ результат (finding), а не повод запускать vv-implementer.
-5. Итоговый отчёт пользователю:
-   - список findings с severity (blocker/major/minor), сгруппированный по ревьюеру;
-   - резюме: что блокирует, что рекомендательное;
-   - **стоп**: не предлагай чинить и не чини, пока пользователь явно не попросит фиксы.
-
-## Правила
-
-- Ревьюеры — отдельные суб-агенты; сам себя не ревьюишь.
-- Если оба вернули FAIL — это нормальный исход ревью, не ошибка процесса.
-- В отчёте цитируй файлы и строки; без выдуманных проблем.
-- Если пользователь попросит фиксы ПОСЛЕ отчёта — это уже обычная работа (мелкая — напрямую, крупная — через vv-spec/vv-plan/vv-execute), а не продолжение этого скилла.
+<task>
+Your current task is the ongoing user request. Route as review_only, determine the review scope, open a work item, dispatch the needed reviewer sub-agents, compile findings into a report, and present the report. Do not implement any fixes.
+</task>
+</skill>
