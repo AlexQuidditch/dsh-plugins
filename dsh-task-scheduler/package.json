@@ -1,0 +1,44 @@
+{
+  "name": "dsh-task-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH plugin bundle: CRON-scheduled and manually triggered AI (.md instruction) and bun-script (.ts/.js) tasks with a Settings panel (CRUD, run-now, run history, task_trigger tool). Persistent across DSH restarts.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-tools": "0.1.5-alpha.2"
+  },
+  "license": "MIT"
+}

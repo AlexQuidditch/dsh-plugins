@@ -1,0 +1,72 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.button:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.idle {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.idle:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.active {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.active:hover {
+  color: var(--dsw-alias-state-error-primary);
+  opacity: 0.85;
+}
+
+.busy {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.unknown {
+  opacity: 0.3;
+}
+
+.note {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}

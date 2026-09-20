@@ -1,0 +1,17 @@
+# dsh-plugin-workspace-policy bundle patch.
+#
+# Installed into a profile (dsh plugin --profile <name> add <path>) the CLI
+# reconciles dsh.profile.bundles and appends this row's package. The profile
+# boot merges this patch as one bundle layer.
+#
+# The row mounts ONE host-plane policy engine per process: per-workspace
+# .dsh/workspace.yaml route policy applied at the agent/request seam.
+# The plugin is inert in every workspace that has no policy file.
+- insert:
+  - id: dsh-plugin-workspace-policy
+    name: 'dsh-plugin-workspace-policy'
+    config:
+      configFileName: .dsh/workspace.yaml
+      watch: true
+      debounceMs: 100
+      log: true

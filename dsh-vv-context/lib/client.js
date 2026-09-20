@@ -36,7 +36,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:/Users/alex_quidditch/projects/dsh-plugins/dsh-vv-context/src/client/ContextPanel.module.css.mjs
-		const css = ".Uq6wGq_pill{white-space:nowrap;cursor:pointer;height:22px;color:var(--ds-text-tertiary,#8b8e99);background:var(--ds-surface-secondary,#8c91a01f);border:none;border-radius:11px;align-items:center;padding:0 8px;font-size:12px;line-height:1;display:inline-flex}.Uq6wGq_pill:hover{color:var(--ds-text-primary,#1d1f27);background:var(--ds-surface-tertiary,#8c91a033)}.Uq6wGq_overlay{z-index:1000;background:#0a0c1247;justify-content:flex-end;align-items:flex-start;padding:56px 16px 16px;display:flex;position:fixed;inset:0}.Uq6wGq_panel{border:1px solid var(--ds-border,#787e913d);background:var(--ds-surface-primary,#fff);width:340px;max-height:calc(100vh - 96px);color:var(--ds-text-primary,#1d1f27);border-radius:12px;padding:14px 16px;overflow-y:auto;box-shadow:0 12px 32px #0a0c1238}.Uq6wGq_header{justify-content:space-between;align-items:center;margin-bottom:6px;display:flex}.Uq6wGq_title{font-size:14px;font-weight:600}.Uq6wGq_close{cursor:pointer;color:var(--ds-text-tertiary,#8b8e99);background:0 0;border:none;padding:2px 6px;font-size:18px;line-height:1}.Uq6wGq_section{margin-top:10px}.Uq6wGq_sectionTitle{text-transform:uppercase;letter-spacing:.04em;color:var(--ds-text-tertiary,#8b8e99);margin:0 0 4px;font-size:12px;font-weight:600}.Uq6wGq_row{align-items:center;gap:8px;padding:3px 0;font-size:13px;display:flex}.Uq6wGq_rowLabel{color:var(--ds-text-secondary,#4a4f5e);flex:0 0 150px}.Uq6wGq_rowValue{text-align:right;font-variant-numeric:tabular-nums;flex:none;min-width:52px}.Uq6wGq_barTrack{background:var(--ds-surface-secondary,#8c91a024);border-radius:3px;flex:auto;height:6px;overflow:hidden}.Uq6wGq_barFill{background:var(--ds-accent,#4f7cff);border-radius:3px;height:100%;display:block}.Uq6wGq_footer{color:var(--ds-text-tertiary,#8b8e99);margin-top:10px;font-size:11px;line-height:1.4}";
+		const css = ".Uq6wGq_pill{white-space:nowrap;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);height:22px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);border-radius:11px;align-items:center;padding:0 8px;font-size:12px;line-height:1;transition:color .15s,background-color .15s,border-color .15s;display:inline-flex}.Uq6wGq_pill:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.Uq6wGq_pill:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.Uq6wGq_overlay{z-index:1000;background:color-mix(in srgb, var(--dsw-alias-label-primary) 28%, transparent);justify-content:flex-end;align-items:flex-start;padding:56px 16px 16px;display:flex;position:fixed;inset:0}.Uq6wGq_panel{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);width:340px;max-height:calc(100vh - 96px);color:var(--dsw-alias-label-primary);box-shadow:0 12px 40px color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);border-radius:12px;padding:12px 16px 14px;overflow-y:auto}.Uq6wGq_header{justify-content:space-between;align-items:center;margin-bottom:6px;display:flex}.Uq6wGq_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600}.Uq6wGq_close{cursor:pointer;color:var(--dsw-alias-label-dimmed);background:0 0;border:none;border-radius:6px;padding:2px 6px;font-size:18px;line-height:1;transition:color .15s,background-color .15s}.Uq6wGq_close:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.Uq6wGq_close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.Uq6wGq_section{margin-top:10px}.Uq6wGq_sectionTitle{text-transform:uppercase;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary);margin:0 0 4px;font-size:12px;font-weight:600}.Uq6wGq_row{align-items:center;gap:8px;padding:3px 0;font-size:13px;display:flex}.Uq6wGq_rowLabel{color:var(--dsw-alias-label-secondary);flex:0 0 150px}.Uq6wGq_rowValue{text-align:right;font-variant-numeric:tabular-nums;min-width:52px;color:var(--dsw-alias-label-primary);flex:none}.Uq6wGq_barTrack{background:var(--dsw-alias-bg-layer-3);border-radius:3px;flex:auto;height:6px;overflow:hidden}.Uq6wGq_barFill{background:var(--dsw-alias-brand-primary);border-radius:3px;height:100%;display:block}.Uq6wGq_footer{color:var(--dsw-alias-label-tertiary);margin-top:10px;font-size:11px;line-height:1.4}";
 		const tagId = "dsh-vv-context/ContextPanel.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -122,14 +122,8 @@ window.__ModuleLoader__.load({
 					document.removeEventListener("mousedown", onClick);
 				};
 			}, [open]);
-			const usage = props.useProjection === void 0 ? void 0 : props.useProjection("tokenUsage");
 			const pressure = props.useProjection === void 0 ? void 0 : props.useProjection("contextPressure");
 			const breakdown = props.useProjection === void 0 ? void 0 : props.useProjection("contextBreakdown");
-			const input = usage?.uncachedInputTokens ?? 0;
-			const output = usage?.outputTokens ?? 0;
-			const cacheRead = usage?.cacheReadTokens ?? 0;
-			const cacheWrite = usage?.cacheWriteTokens ?? 0;
-			const usageTotal = input + output + cacheRead + cacheWrite;
 			const requestTokens = pressure?.projectedTokens ?? pressure?.pressureTokens;
 			const occupancyShare = shareOf(requestTokens ?? 0, pressure?.contextWindow);
 			const breakdownShare = shareOf((breakdown?.systemTokens ?? 0) + (breakdown?.toolsTokens ?? 0) + (breakdown?.messageTokens ?? 0), requestTokens);
@@ -157,40 +151,6 @@ window.__ModuleLoader__.load({
 								"aria-label": "Закрыть",
 								children: "×"
 							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-							className: ContextPanel_module_css_default.section,
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-									className: ContextPanel_module_css_default.sectionTitle,
-									children: "Использование"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Row, {
-									label: "Вход (без кэша)",
-									value: formatTokens(input),
-									share: shareOf(input, usageTotal)
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Row, {
-									label: "Кэш-чтение",
-									value: formatTokens(cacheRead),
-									share: shareOf(cacheRead, usageTotal)
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Row, {
-									label: "Кэш-запись",
-									value: formatTokens(cacheWrite),
-									share: shareOf(cacheWrite, usageTotal)
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Row, {
-									label: "Вывод",
-									value: formatTokens(output),
-									share: shareOf(output, usageTotal)
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Row, {
-									label: "Всего",
-									value: formatTokens(usageTotal),
-									share: void 0
-								})
-							]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 							className: ContextPanel_module_css_default.section,
@@ -251,10 +211,6 @@ window.__ModuleLoader__.load({
 									bar: true
 								})
 							]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: ContextPanel_module_css_default.footer,
-							children: "Оценки не претендуют на точную токенизацию провайдера; прочерк — честное «нет данных»."
 						})
 					]
 				})

@@ -9,7 +9,7 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the SlotMap merge so the utilities key resolves.
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 import { ContextPanel } from './ContextPanel.tsx'
 
@@ -17,9 +17,14 @@ import { ContextPanel } from './ContextPanel.tsx'
 export const inject = ['slots']
 
 export function apply(ctx: ClientContext): void {
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
-    id: 'vv-context-inspector',
-    order: 30,
-  }, ContextPanel as never))
+  ctx.slots.inject(
+    'conversation.session.header.utilities',
+    () => ctx.slots.register({
+      name: 'conversation.session.header.utilities',
+      id: 'vv-context-inspector',
+      order: 30,
+    },
+      ContextPanel
+    )
+  )
 }

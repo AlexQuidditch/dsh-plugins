@@ -8,6 +8,14 @@
     config:
       projectRoots:
         - "/Users/alex_quidditch/projects/platform"
+      # Worktree-пиннинг: сессия внутри <dir>/<name> получает скоуп <name>
+      # (файлы читаются из чекаута самого worktree, домен не угадывается).
+      worktrees:
+        dir: "/Users/alex_quidditch/projects/platform.worktrees"
+        # domainByWorktree:                 # переопределение имя→домен при расхождении
+        #   pilot-school: pilot-school
+        includeCore: true                   # core-файлы в worktree-бандле (корневой AGENTS.md и пр.)
+        includeLayers: false                # послойные карты платформы в worktree-бандле
       coreFiles:
         - "AGENTS.md"
         - ".agents/shared/plugin-architecture-primer.md"

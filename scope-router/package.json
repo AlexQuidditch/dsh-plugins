@@ -1,6 +1,6 @@
 {
   "name": "dsh-scope-router",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
   "description": "DSH plugin: auto-injects project instruction files by detected work scope (project root / domain / backend-frontend layer)",
   "type": "module",

@@ -1,0 +1,20 @@
+# Per-workspace LLM route policy for ~/projects/dsh-plugins.
+# Managed by dsh-plugin-workspace-policy; see that package's README.
+model:
+  # Top-level sessions of this workspace start on GLM 5.3 at max effort.
+  default:
+    provider: zai
+    model: glm-5.3
+    reasoningEffort: max
+  # Every delegated child agent (subagent / fork / workflow / ralph) starts
+  # on DeepSeek Flash at max effort. Absolute: overrides preset agentOptions
+  # pins (including subagent_browser's vision model — deepseek-flash keeps
+  # image input, so the downgrade is safe for browser children).
+  workers:
+    provider: deepseek-official
+    model: deepseek-flash
+    reasoningEffort: max
+  # One-shot degradation chain for terminal QUOTA / RATE_LIMIT failures.
+  fallback:
+    - provider: deepseek-official
+      model: deepseek-flash

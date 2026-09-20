@@ -27,13 +27,6 @@ interface PanelProps {
   useProjection?: (key: string) => unknown
 }
 
-interface TokenUsageProjection {
-  uncachedInputTokens?: number
-  outputTokens?: number
-  cacheReadTokens?: number
-  cacheWriteTokens?: number
-}
-
 interface ContextPressureProjection {
   pressureTokens?: number
   projectedTokens?: number
@@ -76,15 +69,9 @@ export function ContextPanel(props: PanelProps): JSX.Element | null {
     }
   }, [open])
 
-  const usage = (props.useProjection === undefined ? undefined : props.useProjection('tokenUsage')) as TokenUsageProjection | undefined
   const pressure = (props.useProjection === undefined ? undefined : props.useProjection('contextPressure')) as ContextPressureProjection | undefined
   const breakdown = (props.useProjection === undefined ? undefined : props.useProjection('contextBreakdown')) as ContextBreakdownProjection | undefined
 
-  const input = usage?.uncachedInputTokens ?? 0
-  const output = usage?.outputTokens ?? 0
-  const cacheRead = usage?.cacheReadTokens ?? 0
-  const cacheWrite = usage?.cacheWriteTokens ?? 0
-  const usageTotal = input + output + cacheRead + cacheWrite
   const requestTokens = pressure?.projectedTokens ?? pressure?.pressureTokens
   const occupancyShare = shareOf(requestTokens ?? 0, pressure?.contextWindow)
   const breakdownShare = shareOf(
@@ -106,15 +93,6 @@ export function ContextPanel(props: PanelProps): JSX.Element | null {
             </div>
 
             <section className={styles.section}>
-              <h3 className={styles.sectionTitle}>Использование</h3>
-              <Row label="Вход (без кэша)" value={formatTokens(input)} share={shareOf(input, usageTotal)} />
-              <Row label="Кэш-чтение" value={formatTokens(cacheRead)} share={shareOf(cacheRead, usageTotal)} />
-              <Row label="Кэш-запись" value={formatTokens(cacheWrite)} share={shareOf(cacheWrite, usageTotal)} />
-              <Row label="Вывод" value={formatTokens(output)} share={shareOf(output, usageTotal)} />
-              <Row label="Всего" value={formatTokens(usageTotal)} share={undefined} />
-            </section>
-
-            <section className={styles.section}>
               <h3 className={styles.sectionTitle}>Давление на окно</h3>
               <Row label="Последний запрос" value={pressure === undefined || pressure.pressureTokens === undefined ? '—' : formatTokens(pressure.pressureTokens)} share={undefined} />
               <Row label="Следующий запрос (оценка)" value={pressure === undefined || pressure.projectedTokens === undefined ? '—' : formatTokens(pressure.projectedTokens)} share={undefined} />
@@ -129,8 +107,6 @@ export function ContextPanel(props: PanelProps): JSX.Element | null {
               <Row label="Messages" value={formatTokens(breakdown?.messageTokens ?? 0)} share={shareOf(breakdown?.messageTokens ?? 0, pressure?.projectedTokens ?? pressure?.pressureTokens)} />
               <Row label="Доля от запроса" value={formatPercent(breakdownShare)} share={breakdownShare} bar />
             </section>
-
-            <div className={styles.footer}>Оценки не претендуют на точную токенизацию провайдера; прочерк — честное «нет данных».</div>
           </div>
         </div>
       )}

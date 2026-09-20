@@ -11,7 +11,6 @@
 | `scope-router` | Автоподстановка файлов инструкций проекта по обнаруженной области (проект / домен / слой). |
 | `dsh-vv-guardian` | Guardian-lite из vv-opencode: авто-одобрение рутинных низкорисковых песочниц-эскалаций (`workspace-write`); рискованное (`danger-full-access`) остаётся в ручном approval-флоу. |
 | `dsh-vv-context` | `/context`-инспектор vv-opencode: кнопка в шапке сессии → панель с честной статистикой контекстного окна (токены по корзинам, давление на окно, разбивка состава). |
-| `dsh-vv-analytics` | AnalyticsPlugin vv-opencode: локальная JSONL-телеметрия каждого шага модели (`~/.dsh/vv-analytics/usage-YYYY-MM.jsonl`) + живой индикатор «кэш NN%» в шапке сессии. |
 | `dsh-vv-peak-hours` | PeakHoursPlugin vv-opencode: хост-гейт вызовов модели в пиковые часы провайдера — режимы `soft` (warn в лог) и `hard` (блок ошибкой `PEAK_HOURS_BLOCK`). |
 | `dsh-vv-spec-guard` | SpecGuardPlugin vv-opencode: детерминированный линтер `.vvoc` spec/plan XML (идентичности, зависимости, статусы) + вердикты при чтении файлов. |
 
@@ -54,7 +53,6 @@ dsh plugin --profile web add hello-world
 dsh plugin --profile web add scope-router
 dsh plugin --profile web add dsh-vv-guardian
 dsh plugin --profile web add dsh-vv-context
-dsh plugin --profile web add dsh-vv-analytics
 dsh plugin --profile web add dsh-vv-peak-hours
 dsh plugin --profile web add dsh-vv-spec-guard
 

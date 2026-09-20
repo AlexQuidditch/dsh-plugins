@@ -1,0 +1,12 @@
+# dsh-task-scheduler bundle patch.
+#
+# Installed into a profile (dsh plugin --profile <name> add …) the CLI
+# reconciles dsh.profile.bundles and appends this row's package. The profile
+# boot merges this patch as one bundle layer.
+#
+# The row mounts ONE scheduler per process: durable task store under the DSH
+# home, the CRON ticker, per-workspace driver agents, the HTTP API for the
+# browser panel, and the task_trigger model tool.
+- insert:
+  - id: dsh-task-scheduler
+    name: 'dsh-task-scheduler'
