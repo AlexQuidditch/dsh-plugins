@@ -1,0 +1,30 @@
+# dsh-managed-sessions bundle patch.
+#
+# Installed into a profile (`dsh plugin --profile web add dsh-managed-sessions`)
+# the CLI reconciles dsh.profile.bundles and appends this row's package; the
+# profile boot merges this patch as one bundle layer.
+#
+# The row mounts ONE host plugin per process. It publishes no service and
+# consumes host services only: `tools` (registration, resolved through
+# ctx.get/ctx.inject) plus `sessionController`, `sessions`, `agents`,
+# `workspaceRegistry`, and `sandboxPolicy`, each read lazily with ctx.get()
+# and degrading into a readable tool error when absent.
+- insert:
+  - id: dsh-managed-sessions
+    name: "dsh-managed-sessions"
+    config:
+      # Каталоги, внутри которых агенту разрешено создавать managed-сессии и
+      # которыми разрешено управлять через session_send. Пустой список =
+      # без ограничений (агент может спавнить сессию в любом каталоге).
+      # Пример:
+      #   allowedRoots:
+      #     - "/Users/you/projects/my-app"
+      allowedRoots: []
+      # Наследовать режим песочницы вызывающей сессии, если у неё есть явный
+      # override (`sandboxPolicy.overrideOf`). Без override новая сессия
+      # получает деплоймент-дефолт.
+      inheritSandbox: true
+      # Регистрировать в runtime-слое скилл skills/managed-sessions/SKILL.md —
+      # политику выбора между subagent и managed-сессией. Одноимённый скилл в
+      # проекте (<project>/.dsh/skills/managed-sessions/) его перекрывает.
+      registerSkill: true

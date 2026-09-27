@@ -13,6 +13,7 @@
 | `dsh-vv-context` | `/context`-инспектор vv-opencode: кнопка в шапке сессии → панель с честной статистикой контекстного окна (токены по корзинам, давление на окно, разбивка состава). |
 | `dsh-vv-peak-hours` | PeakHoursPlugin vv-opencode: хост-гейт вызовов модели в пиковые часы провайдера — режимы `soft` (warn в лог) и `hard` (блок ошибкой `PEAK_HOURS_BLOCK`). |
 | `dsh-vv-spec-guard` | SpecGuardPlugin vv-opencode: детерминированный линтер `.vvoc` spec/plan XML (идентичности, зависимости, статусы) + вердикты при чтении файлов. |
+| `dsh-managed-sessions` | Модельные инструменты для создания и ведения настоящих managed-сессий в workspace (`session_spawn` / `session_send` / `session_status` / `session_cancel`): самостоятельные root-сессии в сайдбаре с собственным жизненным циклом, а не субагенты. Рядом едет скилл `managed-sessions` — политика выбора между `subagent` и managed-сессией. |
 
 ## CLI
 
@@ -55,6 +56,7 @@ dsh plugin --profile web add dsh-vv-guardian
 dsh plugin --profile web add dsh-vv-context
 dsh plugin --profile web add dsh-vv-peak-hours
 dsh plugin --profile web add dsh-vv-spec-guard
+dsh plugin --profile web add dsh-managed-sessions
 
 # пресет vv-controller + CLI:
 ./scripts/install-vv-controller.sh

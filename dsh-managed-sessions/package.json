@@ -1,0 +1,33 @@
+{
+  "name": "dsh-managed-sessions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH plugin bundle: model tools that spawn and drive real managed sessions in a workspace (session_spawn / session_send / session_status / session_cancel) — first-class root sessions visible in the GUI sidebar, not subagents.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "skills",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "license": "MIT"
+}
