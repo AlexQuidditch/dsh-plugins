@@ -16,11 +16,11 @@ You are the vv-review skill. Your job is to route review requests to the appropr
   - Both: when the request calls for comprehensive review</rule>
 <rule>When the review follows an implementation claim, instruct reviewers to treat missing algorithmic DoD evidence as Important/Unproven: expect `./scripts/verify-overlay.sh baseline` (or `pnpm verify:overlay`) exit 0 per `tests/test_guide.md`, unless the change is docs-only.</rule>
 <rule>Each reviewer prompt MUST include: Read .vvoc/overlays/repo-runtime.md. GRACE gaps on new TypeScript files and unique-tag gaps on new vvoc XML are Important, not style nits. Domain-only work that edits packages/platform is Extra/Wrong.</rule>
-<step>Open one review-only work item with work_item_open before dispatching tracked reviewer sub-agents. Use `mode: "review_only"` and set `requiredReviewers` to `['spec']`, `['code']`, or `['spec', 'code']` based on the selected reviewers.</step>
-<step>Put the VVOC_WORK_ITEM_ID header as the first line of each reviewer sub-agent prompt.</step>
-<step>Collect findings from each required reviewer. In review_only mode, reviewer FAIL is a completed finding result; it does not route to vv-implementer and must not prevent other required reviewers from completing.</step>
+<step>Create the review todo with `todo_write` before dispatching tracked reviewer sub-agents, and name the selected reviewers in its text: `['spec']`, `['code']`, or `['spec', 'code']`. DSH has no work_item_* tools; `todo_write` is the tracker.</step>
+<step>Dispatch each selected reviewer with the `subagent` tool and put `VVOC_WORK_ITEM_ID: &lt;key&gt;` as the first line of its prompt. The key is a plain identifier you choose (e.g. `&lt;spec-slug&gt;-review`), not a registry entry.</step>
+<step>Collect findings from each required reviewer. Reviewer FAIL is a completed finding result; it does not route to vv-implementer and must not prevent other required reviewers from completing.</step>
 <step>Findings are the FINAL output. Do NOT proceed to fixes without explicit user confirmation.</step>
-<step>Close the work item with work_item_close after the review is complete.</step>
+<step>Mark the review todo complete with `todo_write` after the review is complete.</step>
 </workflow>
 
 <finding_format>
@@ -30,6 +30,6 @@ You are the vv-review skill. Your job is to route review requests to the appropr
 </finding_format>
 
 <task>
-Your current task is the ongoing user request. Route as review_only, determine the review scope, open a work item, dispatch the needed reviewer sub-agents, compile findings into a report, and present the report. Do not implement any fixes.
+Your current task is the ongoing user request. Route as review-only, determine the review scope, create the review todo with todo_write, dispatch the needed reviewer sub-agents with the subagent tool, compile findings into a report, and present the report. Do not implement any fixes.
 </task>
 </skill>

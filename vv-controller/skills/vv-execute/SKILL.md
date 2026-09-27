@@ -8,8 +8,8 @@ description: Use when given a path to a plan.xml — validates the plan, assesse
 You are the vv-execute skill. Your job is to execute a plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml — first validate the plan, assess its execution complexity, and make the user explicitly choose an execution mode unless they already specified one.
 
 Supported modes:
-- classic: walk tasks in dependency order, dispatch vv-implementer with the extracted contract and acceptance criteria per task, track progress with work_item_open/list/close, verify results, and commit per task.
-- inline: walk tasks in dependency order and implement directly in the current session without mandatory per-task subagent dispatch, while preserving TodoWrite tracking, acceptance verification, and per-task or per-wave commit discipline.
+- classic: walk tasks in dependency order, dispatch vv-implementer with the extracted contract and acceptance criteria per task, track progress with todo_write, verify results, and commit per task.
+- inline: walk tasks in dependency order and implement directly in the current session without mandatory per-task subagent dispatch, while preserving todo_write tracking, acceptance verification, and per-task or per-wave commit discipline.
 
 Do not mutate files until the execution mode is explicit. In classic mode, delegate implementation to vv-implementer. In inline mode, write code yourself in the current session.
 </identity>
@@ -172,13 +172,13 @@ Do not mutate files until the execution mode is explicit. In classic mode, deleg
   2. classic — delegate each task to vv-implementer
   </format>
 
-  Wait for the user's answer before editing files, opening implementation work items, dispatching vv-implementer, or running implementation commands.
+  Wait for the user's answer before editing files, marking a todo in progress, dispatching vv-implementer, or running implementation commands.
 </step>
-<step name="create-todo">Create a TodoWrite with all task IDs in dependency order for progress tracking.</step>
+<step name="create-todo">Create the todo list with todo_write — one entry per task ID in dependency order — for progress tracking. DSH has no work_item_* tools; todo_write is the tracker.</step>
 </pre-execution>
 
 <classic-workflow>
-<principle>Use this workflow only when execution mode is classic. Each task runs as an independent unit with its own work item and implementer dispatch. The implementer receives ONLY the task's contract + criteria + files — not the full plan. This keeps context lean and focused.</principle>
+<principle>Use this workflow only when execution mode is classic. Each task runs as an independent unit with its own todo entry and implementer dispatch. The implementer receives ONLY the task's contract + criteria + files — not the full plan. This keeps context lean and focused.</principle>
 
 <step name="extract">
 Use extract-task to pull the full task content. Collect:
@@ -204,8 +204,9 @@ Every material finding from plan.xml must be enumerated explicitly in the packet
 </step>
 
 <step name="dispatch">
-Open an implementation work item with work_item_open for this task (e.g. `{ key, title, mode: "implementation", requiredReviewers: ["spec", "code"] }`).
-Dispatch vv-implementer with VVOC_WORK_ITEM_ID header + the constructed packet.
+Mark this task's todo entry in progress with todo_write.
+Choose a stable work-item key for this task (e.g. `&lt;spec-slug&gt;-T-001`) and the reviewers that gate it (spec, code, or both) — DSH keeps both in the prompt and the todo text; there is no work-item registry.
+Dispatch vv-implementer with the subagent tool, first prompt line `VVOC_WORK_ITEM_ID: &lt;key&gt;`, followed by the constructed packet.
 The implementer writes code, runs the packet verification commands (task-local + overlay baseline when required), and returns a status. This controller verifies acceptance criteria and commits after verification passes.
 </step>
 
@@ -268,14 +269,14 @@ If the commit fails (e.g. nothing to commit, hook rejection), report the failure
 </step>
 
 <step name="close">
-The task's changes are already committed. Mark the task complete in TodoWrite. Close the work item with work_item_close.
+The task's changes are already committed. Mark the task's todo entry complete with todo_write. If reviewers gate this task, collect their reports through the subagent tool before closing it.
 If all tasks are done → proceed to completion.
 Otherwise → move to the next task in dependency order.
 </step>
 </classic-workflow>
 
 <inline-workflow>
-<principle>Use this workflow only when execution mode is inline. Execute tasks directly in the current session to reduce latency and token overhead for clear, localized plans. Inline execution preserves the plan contract: dependency order, TodoWrite tracking, acceptance verification, and commit discipline still apply.</principle>
+<principle>Use this workflow only when execution mode is inline. Execute tasks directly in the current session to reduce latency and token overhead for clear, localized plans. Inline execution preserves the plan contract: dependency order, todo_write tracking, acceptance verification, and commit discipline still apply.</principle>
 
 <step name="extract">
 Use extract-task to pull the full task content. Collect:
@@ -315,7 +316,7 @@ If git is not available or the working directory is not a git repository, skip w
 </step>
 
 <step name="close">
-Mark the task complete in TodoWrite after its acceptance criteria pass and its task/wave commit is complete or intentionally skipped with a warning. If all tasks are done → proceed to completion. Otherwise → move to the next task in dependency order.
+Mark the task's todo entry complete with todo_write after its acceptance criteria pass and its task/wave commit is complete or intentionally skipped with a warning. If all tasks are done → proceed to completion. Otherwise → move to the next task in dependency order.
 </step>
 
 <reroute>
