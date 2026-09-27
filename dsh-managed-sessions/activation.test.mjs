@@ -180,6 +180,32 @@ class StubSkills extends Service {
   }
 }
 
+/** Проекция `agentPreset`: значение на сессию, как в рантайме. */
+class StubSessionProjections extends Service {
+  constructor(ctx, presets) {
+    super(ctx, 'sessionProjections')
+    this.presets = presets
+  }
+  stateOf(session, key) {
+    if (key !== 'agentPreset') return undefined
+    return this.presets.get(session) ?? null
+  }
+}
+
+/** Реестр пресетов: resolve() знает только перечисленные id. */
+class StubAgentPresets extends Service {
+  constructor(ctx, available) {
+    super(ctx, 'agentPresets')
+    this.available = available
+    this.resolved = []
+  }
+  async resolve(id) {
+    this.resolved.push(id)
+    if (!this.available.includes(id)) throw new Error(`agent-presets: preset "${id}" not found (available: ${this.available.join(', ')})`)
+    return { id, name: id, path: `/presets/${id}/agent.cordis.yml`, trust: 'user' }
+  }
+}
+
 /** Корень с полным набором стабов; live-реестр сессий общий для sessions и контроллера. */
 async function makeRoot(live, config, options = {}) {
   const root = new Context()
@@ -192,6 +218,10 @@ async function makeRoot(live, config, options = {}) {
   await root.plugin(StubWorkspaceRegistry, workspaces)
   await root.plugin(StubSandboxPolicy)
   if (options.withLlm !== false) await root.plugin(StubLlm, options.llmAccepted)
+  if (options.presets !== undefined) {
+    await root.plugin(StubSessionProjections, options.presets.projections)
+    await root.plugin(StubAgentPresets, options.presets.available)
+  }
   await root.plugin(plugin, config)
   return root
 }
@@ -306,6 +336,52 @@ appends.length = 0
 const unvalidated = await byName(noLlm.tools, 'session_spawn').execute({ prompt: 'без llm', provider: 'zai', model: 'glm-4.7' }, exec)
 check('модель: без llm-сервиса выбор всё равно пишется', unvalidated.ok === true && appends.some((entry) => entry.event === 'model/selection'), JSON.stringify(unvalidated))
 await noLlm.fiber.dispose()
+
+// ── 3c. наследование агент-пресета ──────────────────────────────────────────
+
+const callerLive = liveSessions.get('caller-1')
+const presetFixture = { projections: new Map([[callerLive, 'vv-controller']]), available: ['standard-browser', 'vv-controller'] }
+const lastCreate = (root) => root.sessionController.calls.filter((call) => call.method === 'create').pop()
+
+const inheriting = await makeRoot(liveSessions, {}, { presets: presetFixture })
+const inheritSpawn = byName(inheriting.tools, 'session_spawn')
+const inheritedCall = await inheritSpawn.execute({ prompt: 'под тем же пресетом' }, exec)
+check('пресет: унаследован от родителя', inheritedCall.ok === true && inheritedCall.agentPreset === 'vv-controller' && inheritedCall.presetInherited === true, JSON.stringify(inheritedCall))
+check('пресет: create получил пресет родителя', lastCreate(inheriting).request.agentPreset === 'vv-controller', JSON.stringify(lastCreate(inheriting).request))
+
+const explicitCall = await inheritSpawn.execute({ prompt: 'свой пресет', agentPreset: 'standard-browser' }, exec)
+check('пресет: явный аргумент побеждает наследование', explicitCall.ok === true && explicitCall.agentPreset === 'standard-browser' && explicitCall.presetInherited === undefined && lastCreate(inheriting).request.agentPreset === 'standard-browser', JSON.stringify(explicitCall))
+await inheriting.fiber.dispose()
+
+const offPresets = await makeRoot(liveSessions, { inheritPreset: false }, { presets: presetFixture })
+const offCall = await byName(offPresets.tools, 'session_spawn').execute({ prompt: 'без наследования' }, exec)
+check('пресет: inheritPreset=false отключает наследование', offCall.ok === true && offCall.agentPreset === undefined && lastCreate(offPresets).request.agentPreset === undefined, JSON.stringify(offCall))
+await offPresets.fiber.dispose()
+
+const noPresetRoot = await makeRoot(liveSessions, {})
+const noPresetCall = await byName(noPresetRoot.tools, 'session_spawn').execute({ prompt: 'без реестра пресетов' }, exec)
+check('пресет: без реестра пресетов спавн не падает', noPresetCall.ok === true && noPresetCall.agentPreset === undefined, JSON.stringify(noPresetCall))
+await noPresetRoot.fiber.dispose()
+
+const staleRoot = await makeRoot(liveSessions, {}, { presets: { projections: new Map([[callerLive, 'deleted-preset']]), available: ['standard-browser'] } })
+const staleCall = await byName(staleRoot.tools, 'session_spawn').execute({ prompt: 'мёртвый пресет' }, exec)
+check('пресет: нерезолвящийся пресет родителя не роняет спавн', staleCall.ok === true && staleCall.agentPreset === undefined && typeof staleCall.warning === 'string' && staleCall.warning.includes('не резолвится'), JSON.stringify(staleCall))
+check('пресет: на мёртвом пресете create идёт без agentPreset', lastCreate(staleRoot).request.agentPreset === undefined, JSON.stringify(lastCreate(staleRoot).request))
+await staleRoot.fiber.dispose()
+
+const badExplicit = await makeRoot(liveSessions, {}, { presets: presetFixture })
+const badCall = await byName(badExplicit.tools, 'session_spawn').execute({ prompt: 'нет такого', agentPreset: 'nope' }, exec)
+check('пресет: неизвестный явный пресет отклонён до создания сессии', badCall.ok === false && String(badCall.error).includes('не найден') && badExplicit.sessionController.calls.filter((call) => call.method === 'create').length === 0, JSON.stringify(badCall))
+await badExplicit.fiber.dispose()
+
+const headerOnly = makeLiveSession(CALLER_CWD)
+headerOnly.header.agentPreset = 'vv-controller'
+liveSessions.set('caller-1', headerOnly)
+const headerRoot = await makeRoot(liveSessions, {}, { presets: { projections: new Map(), available: ['vv-controller'] } })
+const headerCall = await byName(headerRoot.tools, 'session_spawn').execute({ prompt: 'из шапки' }, exec)
+check('пресет: fallback на SessionHeader', headerCall.ok === true && headerCall.agentPreset === 'vv-controller' && headerCall.presetInherited === true, JSON.stringify(headerCall))
+await headerRoot.fiber.dispose()
+liveSessions.set('caller-1', callerLive)
 
 // ── 4. session_status: список и tail ────────────────────────────────────────
 

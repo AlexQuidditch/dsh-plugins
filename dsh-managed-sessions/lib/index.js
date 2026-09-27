@@ -21,7 +21,8 @@
  *   create({ workspaceId | cwd, agentPreset? }) -> { sessionId }
  *     `agents.ensureSession` creates the Session; with a workspaceId it also
  *     runs `workspace.attachSession`, which is what puts the row in the GUI
- *     workspace group.
+ *     workspace group. The preset is the caller's own unless the tool argument
+ *     overrides it, so a child works under the same policy as its parent.
  *   prompt({ requestId, sessionId, mode, content }, signal) -> { accepted }
  *     resumes a cold Session and admits the message, so the root agent runs
  *     its own turn. `requestId` is idempotent: the same id never delivers
@@ -56,6 +57,8 @@ const DEFAULTS = {
   allowedRoots: [],
   /** Inherit the calling session's explicit sandbox override into the child. */
   inheritSandbox: true,
+  /** Inherit the calling session's agent preset into the child. */
+  inheritPreset: true,
   /** Register the shipped delegation-policy skill into the runtime layer. */
   registerSkill: true,
 }
@@ -191,6 +194,71 @@ export function apply(ctx, input = {}) {
   }
 
   /**
+   * Agent preset of the calling session. The `agentPreset` projection comes
+   * first — it tracks a pre-first-turn switch (`agent-presets/selected`) — and
+   * the durable Session header second, since the header is written once at
+   * creation.
+   * @param exec - the executing tool's context, carrying the calling agent.
+   * @returns the preset id, or undefined when the caller names none.
+   */
+  function callerPreset(exec) {
+    try {
+      const session = callerSession(exec)
+      if (!session) return undefined
+      const projections = ctx.get('sessionProjections')
+      if (projections !== undefined && typeof projections.stateOf === 'function') {
+        const projected = projections.stateOf(session, 'agentPreset')
+        if (typeof projected === 'string' && projected.length > 0) return projected
+      }
+      const header = session.header
+      const declared = header ? header.agentPreset : undefined
+      return typeof declared === 'string' && declared.length > 0 ? declared : undefined
+    } catch (error) {
+      console.error('[managed-sessions] caller preset lookup failed:', describe(error))
+      return undefined
+    }
+  }
+
+  /**
+   * Decide which preset the new Session joins: an explicit argument wins, then
+   * the calling session's own preset — so a child keeps working under the same
+   * policy as its parent — then the deployment default by omission. A missing
+   * explicit preset fails the spawn before anything is created; an inherited
+   * one that no longer resolves is dropped with a warning instead, because
+   * inheritance must never be the reason a spawn dies.
+   * @param args - tool arguments that may carry `agentPreset`.
+   * @param exec - the executing tool's context.
+   * @returns `{ id, inherited }`, `{}` for the deployment default, `{ error }`, or `{ warning }`.
+   */
+  async function resolvePreset(args, exec) {
+    const explicit = args && typeof args.agentPreset === 'string' ? args.agentPreset.trim() : ''
+    const presets = ctx.get('agentPresets')
+    const resolvable = presets !== undefined && typeof presets.resolve === 'function'
+    if (explicit.length > 0) {
+      if (!resolvable) return { id: explicit, inherited: false }
+      try {
+        const resolved = await presets.resolve(explicit)
+        const id = resolved && typeof resolved.id === 'string' && resolved.id.length > 0 ? resolved.id : explicit
+        return { id, inherited: false }
+      } catch (error) {
+        return { error: `пресет «${explicit}» не найден: ${describe(error)}` }
+      }
+    }
+    if (config.inheritPreset !== true) return {}
+    const inherited = callerPreset(exec)
+    if (inherited === undefined) return {}
+    if (!resolvable) return { id: inherited, inherited: true }
+    try {
+      const resolved = await presets.resolve(inherited)
+      const id = resolved && typeof resolved.id === 'string' && resolved.id.length > 0 ? resolved.id : inherited
+      return { id, inherited: true }
+    } catch (error) {
+      console.error(`[managed-sessions] inherited preset "${inherited}" does not resolve:`, describe(error))
+      return { warning: `пресет родителя «${inherited}» не резолвится (${describe(error)}); сессия создана на дефолтном пресете` }
+    }
+  }
+
+  /**
    * Copy the caller's explicit sandbox override into the new Session, exactly
    * as dsh-task-scheduler does for its driver agents: only an explicit
    * override travels, so a default-policy caller leaves the child on the
@@ -321,14 +389,14 @@ export function apply(ctx, input = {}) {
 
   const spawnTool = {
     name: 'session_spawn',
-    description: 'Создать НОВУЮ управляемую сессию (managed session) в workspace и сразу дать ей задачу. Это самостоятельная сессия верхнего уровня, а не субагент: она видна пользователю в сайдбаре workspace, живёт независимо от текущей сессии, её можно открыть, дополнить и продолжить вручную. Возвращает sessionId. Результат работы НЕ приходит автоматически — следите через session_status. Модель для новой сессии можно задать через provider/model/reasoningEffort; без них сессия едет на деплоймент-дефолте.',
+    description: 'Создать НОВУЮ управляемую сессию (managed session) в workspace и сразу дать ей задачу. Это самостоятельная сессия верхнего уровня, а не субагент: она видна пользователю в сайдбаре workspace, живёт независимо от текущей сессии, её можно открыть, дополнить и продолжить вручную. Возвращает sessionId. Результат работы НЕ приходит автоматически — следите через session_status. По умолчанию новая сессия наследует агент-пресет текущей сессии; модель — деплоймент-дефолт, если не указаны provider/model/reasoningEffort.',
     parameters: {
       type: 'object',
       properties: {
         prompt: { type: 'string', description: 'Задача для новой сессии: самодостаточный полный текст.' },
         cwd: { type: 'string', description: 'Каталог workspace. По умолчанию — каталог текущей сессии.' },
         title: { type: 'string', description: 'Заголовок сессии в сайдбаре (опционально).' },
-        agentPreset: { type: 'string', description: 'ID агент-пресета для новой сессии (опционально). По умолчанию — дефолтный пресет деплоймента.' },
+        agentPreset: { type: 'string', description: 'ID агент-пресета для новой сессии (опционально). По умолчанию наследуется пресет текущей сессии, а если его нет — дефолтный пресет деплоймента.' },
         provider: { type: 'string', description: 'Провайдер модели для новой сессии (опционально). Можно не указывать, если model однозначно находится в каталоге.' },
         model: { type: 'string', description: 'ID модели для новой сессии (опционально). Принимается и форма "provider/model".' },
         reasoningEffort: { type: 'string', description: 'Усилие рассуждения для выбранной модели (опционально; иначе — дефолт самой модели).' },
@@ -345,9 +413,12 @@ export function apply(ctx, input = {}) {
           cwd: { type: 'string' },
           workspaceId: { type: 'string' },
           title: { type: 'string' },
+          agentPreset: { type: 'string' },
+          presetInherited: { type: 'boolean' },
           provider: { type: 'string' },
           model: { type: 'string' },
           reasoningEffort: { type: 'string' },
+          warning: { type: 'string' },
           error: { type: 'string' },
         },
       },
@@ -356,7 +427,9 @@ export function apply(ctx, input = {}) {
         if (result.ok === true) {
           const where = result.workspaceId !== undefined ? `workspace ${result.workspaceId}` : `cwd ${result.cwd}`
           const route = result.model === undefined ? 'деплоймент-дефолт' : `${result.provider}/${result.model}${result.reasoningEffort === undefined ? '' : ` (${result.reasoningEffort})`}`
-          return [{ type: 'text', text: `Сессия ${result.sessionId} создана (${where}, модель: ${route}) и задача доставлена. Следить: session_status { sessionId: "${result.sessionId}" }.` }]
+          const preset = result.agentPreset === undefined ? '' : `, пресет: ${result.agentPreset}${result.presetInherited === true ? ' (унаследован)' : ''}`
+          const warning = result.warning === undefined ? '' : ` Внимание: ${result.warning}.`
+          return [{ type: 'text', text: `Сессия ${result.sessionId} создана (${where}, модель: ${route}${preset}) и задача доставлена.${warning} Следить: session_status { sessionId: "${result.sessionId}" }.` }]
         }
         return [{ type: 'text', text: `Не удалось создать сессию: ${result.error || 'unknown error'}` }]
       },
@@ -372,17 +445,19 @@ export function apply(ctx, input = {}) {
       if (!withinRoots(cwd, config.allowedRoots)) {
         return { ok: false, cwd, error: `каталог ${cwd} вне allowedRoots (${config.allowedRoots.join(', ')})` }
       }
-      // Resolve the model before creating anything: a rejected route must not
-      // leave a half-created session behind.
+      // Resolve the model and the preset before creating anything: a rejected
+      // route or an unknown explicit preset must not leave a half-created
+      // session behind.
       const requested = await resolveSelection(sc, args, exec.signal)
       if (requested.error !== undefined) return { ok: false, cwd, error: requested.error }
       const selection = requested.selection
+      const preset = await resolvePreset(args, exec)
+      if (preset.error !== undefined) return { ok: false, cwd, error: preset.error }
       const workspaceId = await workspaceIdFor(cwd)
-      const preset = args && typeof args.agentPreset === 'string' && args.agentPreset.trim().length > 0 ? args.agentPreset.trim() : undefined
       let created
       try {
         const request = workspaceId !== undefined ? { workspaceId } : { cwd }
-        if (preset !== undefined) request.agentPreset = preset
+        if (preset.id !== undefined) request.agentPreset = preset.id
         created = await sc.create(request)
       } catch (error) {
         return { ok: false, cwd, error: `create: ${describe(error)}` }
@@ -416,6 +491,9 @@ export function apply(ctx, input = {}) {
       const result = { ok: true, sessionId, cwd }
       if (workspaceId !== undefined) result.workspaceId = workspaceId
       if (title !== undefined) result.title = title
+      if (preset.id !== undefined) result.agentPreset = preset.id
+      if (preset.inherited === true) result.presetInherited = true
+      if (preset.warning !== undefined) result.warning = preset.warning
       if (selection !== undefined) {
         result.provider = selection.provider
         result.model = selection.model

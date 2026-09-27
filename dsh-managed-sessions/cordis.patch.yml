@@ -24,6 +24,10 @@
       # override (`sandboxPolicy.overrideOf`). Без override новая сессия
       # получает деплоймент-дефолт.
       inheritSandbox: true
+      # Наследовать агент-пресет вызывающей сессии: сессия-ребёнок под
+      # vv-controller остаётся под vv-controller. Явный agentPreset в вызове
+      # инструмента побеждает; если у родителя пресета нет — деплоймент-дефолт.
+      inheritPreset: true
       # Регистрировать в runtime-слое скилл skills/managed-sessions/SKILL.md —
       # политику выбора между subagent и managed-сессией. Одноимённый скилл в
       # проекте (<project>/.dsh/skills/managed-sessions/) его перекрывает.
