@@ -90,11 +90,17 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		/** Every configured window, flattened for display. */
+		/**
+		 * Every configured window, flattened for display.
+		 *
+		 * Each entry keeps its family key: two providers can peak in the same
+		 * wall-clock hours (DeepSeek 06:00-10:00 UTC and GLM 14:00-18:00 Beijing
+		 * are the same instant), and an unlabelled list would read as a duplicate.
+		 */
 		function allWindows(schedules) {
 			const out = [];
 			for (const key of Object.keys(schedules || {})) {
-				for (const window of schedules[key].windows || []) out.push(window);
+				for (const window of schedules[key].windows || []) out.push({ key, window });
 			}
 			return out;
 		}
@@ -179,9 +185,13 @@ window.__ModuleLoader__.load({
 			};
 
 			const windows = state === null ? [] : allWindows(state.schedules);
+			// Label the family only when more than one is configured, so a
+			// single-provider setup keeps the plain, quiet list.
+			const families = state === null ? [] : Object.keys(state.schedules || {});
+			const windowLabel = (entry) => (families.length > 1 ? entry.key + " " : "") + localWindowLabel(entry.window);
 
 			const popover = !open ? null : h("div", { className: "dph-pop", role: "dialog", "aria-label": "Пиковые часы" }, [
-				h("div", { className: "dph-title", key: "t" }, "Пиковые часы DeepSeek"),
+				h("div", { className: "dph-title", key: "t" }, "Пиковые часы провайдеров"),
 				h("div", { className: "dph-row", key: "status" }, [
 					h("span", { className: "dph-k", key: "k" }, "Сейчас"),
 					h("span", { className: "dph-v" + (peak ? " dph-warn" : ""), key: "v" }, state === null ? "нет связи с хостом" : (peak ? "пик" : "не пик")),
@@ -194,7 +204,7 @@ window.__ModuleLoader__.load({
 					h("span", { className: "dph-k", key: "k" }, "Режим гейта"),
 					h("span", { className: "dph-v", key: "v" }, mode === "hard" ? "hard (блокирует)" : "soft (предупреждает)"),
 				]),
-				windows.length === 0 ? null : h("div", { className: "dph-win", key: "w" }, "Окна (твоё время): " + windows.map(localWindowLabel).join(", ")),
+				windows.length === 0 ? null : h("div", { className: "dph-win", key: "w" }, "Окна (твоё время): " + windows.map(windowLabel).join(", ")),
 				h("div", { className: "dph-sep", key: "s" }),
 				h("label", { className: "dph-toggle", key: "l" }, [
 					h("input", { type: "checkbox", checked: allowed, disabled: busy, onChange: toggle, key: "i" }),
@@ -214,7 +224,7 @@ window.__ModuleLoader__.load({
 					type: "button",
 					className,
 					key: "p",
-					title: "Пиковые часы DeepSeek — нажми, чтобы открыть настройки",
+					title: "Пиковые часы провайдеров — нажми, чтобы открыть настройки",
 					"aria-label": text,
 					"aria-expanded": open,
 					onClick: () => setOpen((value) => !value),
