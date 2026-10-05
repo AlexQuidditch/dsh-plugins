@@ -26,6 +26,13 @@ function sessionIdOf(payload) {
 	const value = payload.sessionId;
 	return typeof value === "string" && value !== "" ? value : void 0;
 }
+/**
+ * Owning session of one job projection. 0.2 `JobView` calls it `owner`;
+ * pre-0.2 builds spelled it `ownerSession`, so both are read.
+ */
+function ownerOf(job) {
+	return job.owner ?? job.ownerSession;
+}
 function apply(ctx) {
 	const jobs = ctx.get("jobs");
 	const agents = ctx.get("agents");
@@ -37,11 +44,15 @@ function apply(ctx) {
 			if (endpoint !== ENDPOINT) return failure("halt-jobs/unknown-endpoint", `unknown endpoint ${JSON.stringify(endpoint)}`);
 			const sessionId = sessionIdOf(payload);
 			if (sessionId === void 0) return failure("halt-jobs/bad-request", "payload.sessionId must be a non-empty string");
-			const caller = agents.get(sessionId);
-			if (caller === void 0) return failure("halt-jobs/session-not-live", `no live agent for session ${JSON.stringify(sessionId)}`);
+			// Liveness gate: the session must own a live agent in this process.
+			if (agents.get(sessionId) === void 0) return failure("halt-jobs/session-not-live", `no live agent for session ${JSON.stringify(sessionId)}`);
+			// The registry's isolation fence compares `job.owner.id === caller`,
+			// so the caller argument is the SESSION ID string. Passing the Agent
+			// object (as 0.1 accepted) matches nothing and silently yields an
+			// empty roster.
 			let owned;
 			try {
-				owned = jobs.list(caller).filter((job) => job.ownerSession === sessionId);
+				owned = jobs.list(sessionId).filter((job) => ownerOf(job) === sessionId);
 			} catch (error) {
 				return failure("halt-jobs/read-failed", error instanceof Error ? error.message : String(error));
 			}
@@ -49,14 +60,14 @@ function apply(ctx) {
 			for (const job of owned) {
 				if (job.status !== "running") continue;
 				try {
-					jobs.kill(job.id, caller, "stopped from the session-header stop pill");
+					jobs.kill(job.id, sessionId, "stopped from the session-header stop pill");
 					stopped += 1;
 				} catch {}
 			}
 			let remaining = 0;
 			try {
-				for (const job of jobs.list(caller)) {
-					if (job.ownerSession !== sessionId) continue;
+				for (const job of jobs.list(sessionId)) {
+					if (ownerOf(job) !== sessionId) continue;
 					if (job.status === "running" || job.status === "stopping") remaining += 1;
 				}
 			} catch {

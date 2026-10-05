@@ -56,11 +56,22 @@ interface ConnectionLike {
   }
 }
 
-/** Structural slice of a job snapshot as returned by the registry. */
+/**
+ * Structural slice of a job snapshot as returned by the registry.
+ *
+ * `owner` is the 0.2 `JobView` field; pre-0.2 builds spelled it
+ * `ownerSession`. Both are read so one bundle serves either runtime.
+ */
 interface JobSnapshotLike {
   id: string
   status: string
+  owner?: string
   ownerSession?: string
+}
+
+/** The owning session of one job projection, across both field spellings. */
+function ownerOf(job: JobSnapshotLike): string | undefined {
+  return job.owner ?? job.ownerSession
 }
 
 /** Structural slice of the jobs registry this plugin consumes. */
@@ -103,14 +114,17 @@ export function apply(ctx: Context): void {
         return failure('halt-jobs/bad-request', 'payload.sessionId must be a non-empty string')
       }
 
-      const caller = agents.get(sessionId)
-      if (caller === undefined) {
+      // Liveness gate: the session must own a live agent in this process.
+      if (agents.get(sessionId) === undefined) {
         return failure('halt-jobs/session-not-live', `no live agent for session ${JSON.stringify(sessionId)}`)
       }
 
+      // The registry's isolation fence compares `job.owner.id === caller`, so
+      // the caller argument is the SESSION ID string. Passing the Agent object
+      // (as 0.1 accepted) matches nothing and silently yields an empty roster.
       let owned: JobSnapshotLike[]
       try {
-        owned = jobs.list(caller).filter((job) => job.ownerSession === sessionId)
+        owned = jobs.list(sessionId).filter((job) => ownerOf(job) === sessionId)
       } catch (error) {
         return failure('halt-jobs/read-failed', error instanceof Error ? error.message : String(error))
       }
@@ -119,7 +133,7 @@ export function apply(ctx: Context): void {
       for (const job of owned) {
         if (job.status !== 'running') continue
         try {
-          jobs.kill(job.id, caller, 'stopped from the session-header stop pill')
+          jobs.kill(job.id, sessionId, 'stopped from the session-header stop pill')
           stopped += 1
         } catch {
           // One stubborn job never blocks the rest: the pill's count re-reads live state anyway.
@@ -128,8 +142,8 @@ export function apply(ctx: Context): void {
 
       let remaining = 0
       try {
-        for (const job of jobs.list(caller)) {
-          if (job.ownerSession !== sessionId) continue
+        for (const job of jobs.list(sessionId)) {
+          if (ownerOf(job) !== sessionId) continue
           if (job.status === 'running' || job.status === 'stopping') remaining += 1
         }
       } catch {

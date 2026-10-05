@@ -1,0 +1,12 @@
+{
+  "name": "dsh-agent-presets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Custom DSH agent presets: vv-controller (vv-opencode work policy) and standard-browser (the standard agent plus browser-only subagents).",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

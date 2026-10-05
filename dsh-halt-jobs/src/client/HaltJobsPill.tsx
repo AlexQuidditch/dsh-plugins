@@ -2,9 +2,12 @@
  * Text stop button in `conversation.session.header.actions`, immediately right
  * of the shipped background-jobs selector (`job-list`, order 20).
  *
- * Live/disabled state tracks `jobsBySession` via `useSessions` with no wire
- * traffic of its own. The only host call is `stop-all` on `/dsh-halt-jobs`,
- * injected as a prop by the registering module (./index.tsx).
+ * Job state comes from the client `jobs` service through the slot's `useJobs`
+ * hook (fed by `hooks: { jobs }` on the registration), with `watchRows` opening
+ * the session's roster stream — the 0.2 replacement for the old
+ * `useSessions(state => state.jobsBySession[id])` projection. There is no
+ * polling channel of its own. The only wire call is the `stop-all` endpoint on
+ * the host half's `/dsh-halt-jobs` Connection channel.
  */
 import { useEffect, useMemo, useState } from 'react'
 
@@ -31,10 +34,18 @@ export type StopAllOutcome =
   | { ok: true; value: StopAllValue }
   | { ok: false; message: string }
 
-/** Minimal selector-hook shape over the sessions store. */
-export type UseSessions = <T>(
-  select: (state: { jobsBySession?: Record<string, readonly HaltJobView[] | undefined> }) => T,
+/**
+ * Minimal selector-hook shape over the client jobs store.
+ *
+ * The snapshot is `{ rows, observed }`, keyed by session id — the 0.2 shape
+ * (`ctx.jobs.state`). A session with no live job has no `rows` key at all.
+ */
+export type UseJobs = <T>(
+  select: (state: { rows?: Record<string, readonly HaltJobView[] | undefined> }) => T,
 ) => T
+
+/** Open one session's roster stream; the returned release closes it. */
+export type WatchRows = (sessionId: string) => (() => void) | undefined
 
 /** Stable empty list so a jobless session keeps one array identity. */
 const NO_JOBS: readonly HaltJobView[] = []
@@ -47,14 +58,23 @@ function isLive(job: HaltJobView): boolean {
 interface HaltJobsPillProps {
   /** Session whose jobs this pill stops; standard prop of the actions slot. */
   sessionId?: string
-  /** Sessions-store selector hook; standard prop of the actions slot. */
-  useSessions?: UseSessions
+  /** Client-jobs selector hook, provided through `hooks: { jobs }`. */
+  useJobs?: UseJobs
+  /** Roster-stream opener from the client `jobs` service (inject share). */
+  watchRows?: WatchRows
   /** Wire call into the host half's `/dsh-halt-jobs` channel (inject share). */
   stopAll: (sessionId: string) => Promise<StopAllOutcome>
 }
 
-export function HaltJobsPill({ sessionId = '', useSessions, stopAll }: HaltJobsPillProps) {
-  const jobs = useSessions?.((state) => state.jobsBySession?.[sessionId]) ?? NO_JOBS
+export function HaltJobsPill({ sessionId = '', useJobs, watchRows, stopAll }: HaltJobsPillProps) {
+  // The roster is streamed per watched session, so the pill must open the
+  // stream itself: with no watcher, `rows[sessionId]` stays empty forever.
+  useEffect(() => {
+    if (sessionId === '' || typeof watchRows !== 'function') return
+    return watchRows(sessionId)
+  }, [sessionId, watchRows])
+
+  const jobs = useJobs?.((state) => state.rows?.[sessionId]) ?? NO_JOBS
   const live = useMemo(() => jobs.filter(isLive).length, [jobs])
   const settled = jobs.length - live
   const [busy, setBusy] = useState(false)
@@ -114,7 +134,7 @@ export function HaltJobsPill({ sessionId = '', useSessions, stopAll }: HaltJobsP
           aria-disabled={canStop ? 'false' : 'true'}
           onClick={onClick}
         >
-          Остановить
+          Stop jobs
         </button>
         {note !== '' ? <span className={styles.note} role="status">{note}</span> : null}
       </span>

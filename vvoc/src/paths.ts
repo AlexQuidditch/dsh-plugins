@@ -1,8 +1,12 @@
 /**
- * vvoc path resolution: the DSH home, the preset source inside this repo, and
- * the installed preset destination. Every test injects a fake home through
+ * vvoc path resolution: the DSH home, this repo's preset BUNDLE, and the
+ * profile that installs it. Every test injects a fake home through
  * `dshHomeOverride`, so nothing here reads the real ~/.dsh unless the CLI is
  * actually run.
+ *
+ * Since 0.2 an agent preset is a declaration row in a bundle patch, not a
+ * directory: `$DSH_HOME/.agent-presets/<id>/` is read by nothing, so the CLI
+ * manages the `agent-presets` bundle in the workspace instead.
  */
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -19,20 +23,25 @@ export function dshHome(): string {
   return env.dshHomeOverride ?? process.env.DSH_HOME ?? join(homedir(), '.dsh')
 }
 
-/** The user preset root inside the DSH home. */
-export function presetsRoot(): string {
-  return join(dshHome(), '.agent-presets')
+/** The default profile to manage: $DSH_PROFILE, else `web`. */
+export function defaultProfile(): string {
+  return process.env.DSH_PROFILE ?? 'web'
 }
 
-/** The installed vv-controller preset directory. */
-export function installedPresetDir(): string {
-  return join(presetsRoot(), 'vv-controller')
+/** One profile directory inside the DSH home. */
+export function profileDir(profile: string): string {
+  return join(dshHome(), 'profiles', profile)
 }
 
-/** This repository's vv-controller source directory (vvoc/lib → vvoc → repo root). */
-export function repoPresetDir(): string {
+/** This repository's preset bundle directory (vvoc/lib → vvoc → repo root). */
+export function bundleDir(): string {
   const here = dirname(fileURLToPath(import.meta.url))
-  return resolve(here, '..', '..', 'vv-controller')
+  return resolve(here, '..', '..', 'agent-presets')
+}
+
+/** The vv-* skills shipped inside that bundle. */
+export function bundleSkillsDir(): string {
+  return join(bundleDir(), 'skills')
 }
 
 /** The project working directory (overridable for tests). */

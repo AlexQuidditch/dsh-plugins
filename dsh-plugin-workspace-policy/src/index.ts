@@ -24,7 +24,7 @@
 import z from 'schemastery'
 
 import { decideRequestError, initialAgentState, materializeRoute, NO_GUARDS, pickRoute, previewRoute } from './decide.ts'
-import type { AgentPolicyState, CallConfigShape, RequestGuards } from './decide.ts'
+import type { AgentPolicyState, CallConfigShape, RequestGuards, SessionStartSourceLite } from './decide.ts'
 import { WorkspacePolicyStore } from './policy-store.ts'
 import type { PolicySlot } from './types.ts'
 import { isPolicyActionable } from './types.ts'
@@ -231,9 +231,23 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
 
   // ── lifecycle bookkeeping ──────────────────────────────────────────────────
 
-  ctx.on('agent/session-start', (payload) => {
-    stateFor(payload.agent).sessionSource = payload.source
-  })
+  /**
+   * Record why this agent's session began, for the first-request rule.
+   *
+   * 0.2 delivers that origin as `agent/created`'s `source`; 0.1 delivered the
+   * same `SessionStartSource` value from `agent/session-start`. A payload
+   * without a `source` is ignored, so binding both never clobbers a known one.
+   */
+  const recordSessionSource = (payload: { agent: Agent; source?: SessionStartSourceLite }): void => {
+    if (typeof payload.source === 'string') stateFor(payload.agent).sessionSource = payload.source
+  }
+
+  ctx.on('agent/created', recordSessionSource)
+  // The legacy 0.1 spelling. It is declared only by pre-0.2 typings and never
+  // emitted by 0.2, where binding it is inert — the cast keeps one build
+  // compiling against either event map.
+  const legacyOn = ctx.on as unknown as (name: string, listener: (payload: { agent: Agent; source?: SessionStartSourceLite }) => void) => unknown
+  legacyOn('agent/session-start', recordSessionSource)
 
   ctx.on('agent/disposed', (payload) => {
     agentStates.delete(payload.agent)

@@ -283,7 +283,15 @@ window.__ModuleLoader__.load({
 
     function Panel(props) {
       const useSessions = props.useSessions
-      const currentSessionId = useSessions ? useSessions((s) => s.current) : undefined
+      // 0.2 dropped the sessions store's `current` field: the snapshot is now
+      // { ids, byId, phase, projectionsBySession }. The live equivalent of
+      // "the session on screen" is the one the main view retains — the same
+      // idiom the shipped @deepseek-ai/dsh-client-ui-layout uses in DocumentTitle.
+      const currentSessionId = useSessions ? useSessions((s) => {
+        const byId = (s && s.byId) || {}
+        const hit = Object.values(byId).find((x) => x && x.retainedBy && (x.retainedBy.mainView || 0) > 0)
+        return hit ? hit.id : undefined
+      }) : undefined
       const [data, setData] = React.useState(null)
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState(false)

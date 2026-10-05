@@ -14,7 +14,7 @@
  * call on the options the loop already assembled, so it adds no per-chunk cost.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { decidePeak, type PeakSchedules } from './schedule.js'
+import { decidePeak, resolveSchedule, type PeakSchedules } from './schedule.js'
 
 export const name = 'vv-peak-hours'
 
@@ -55,11 +55,18 @@ export function apply(ctx: Context, config: VvPeakHoursConfig = {}): void {
     }
     if (!decision.inPeak) return next()
 
-    const mode = schedules[provider]?.mode ?? globalMode
+    // Same family resolution as the decision: a config that says `deepseek`
+    // must be able to carry the mode for the runtime id `deepseek-official`.
+    const mode = resolveSchedule(provider, schedules)?.schedule.mode ?? globalMode
     if (mode === 'hard') {
       throw new Error(`PEAK_HOURS_BLOCK: provider "${provider}" is in peak hours until ${decision.until} (elevated pricing); retry outside the window or switch the provider`)
     }
-    ctx.logger.warn('[vv-peak-hours] soft: provider "%s" is in peak hours until %s · elevated pricing', provider, decision.until)
+    ctx.logger.warn(
+      '[vv-peak-hours] soft: provider "%s" is in peak hours until %s · elevated pricing (schedule "%s")',
+      provider,
+      decision.until,
+      decision.matched ?? provider,
+    )
     return next()
   }, { global: true, prepend: true })
 }

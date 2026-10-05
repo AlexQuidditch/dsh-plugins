@@ -5,10 +5,11 @@ const CHANNEL = '/dsh-halt-jobs';
 function numberOf(value) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
-/** Required services: the wire client and the slot registry. */
-export const inject = ['connection', 'slots'];
+/** Required services: the wire client, the slot registry, and the jobs rosters. */
+export const inject = ['connection', 'slots', 'jobs'];
 export function apply(ctx) {
     const connection = ctx.get('connection');
+    const jobs = ctx.get('jobs');
     const stopAll = (sessionId) => {
         if (connection === undefined) {
             return Promise.resolve({ ok: false, message: 'connection service unavailable' });
@@ -32,8 +33,13 @@ export function apply(ctx) {
         name: 'conversation.session.header.actions',
         id: 'halt-stop-all',
         order: 100,
-        // Inject share: the wire call joins the slot's standard props (sessionId,
-        // useSessions) without the component reaching for any context.
-        inject: () => ({ stopAll }),
+        // Inject share: the jobs store rides the renderer's `hooks` bag (every
+        // `hooks.<name>` becomes a `use<Name>` selector prop), and the roster
+        // opener + wire call join the spread props.
+        inject: () => ({
+            hooks: { jobs: jobs?.state },
+            watchRows: (sessionId) => jobs?.watchRows(sessionId),
+            stopAll,
+        }),
     }, HaltJobsPill));
 }

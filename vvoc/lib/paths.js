@@ -1,8 +1,12 @@
 /**
- * vvoc path resolution: the DSH home, the preset source inside this repo, and
- * the installed preset destination. Every test injects a fake home through
+ * vvoc path resolution: the DSH home, this repo's preset BUNDLE, and the
+ * profile that installs it. Every test injects a fake home through
  * `dshHomeOverride`, so nothing here reads the real ~/.dsh unless the CLI is
  * actually run.
+ *
+ * Since 0.2 an agent preset is a declaration row in a bundle patch, not a
+ * directory: `$DSH_HOME/.agent-presets/<id>/` is read by nothing, so the CLI
+ * manages the `agent-presets` bundle in the workspace instead.
  */
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -16,18 +20,22 @@ export const env = {
 export function dshHome() {
     return env.dshHomeOverride ?? process.env.DSH_HOME ?? join(homedir(), '.dsh');
 }
-/** The user preset root inside the DSH home. */
-export function presetsRoot() {
-    return join(dshHome(), '.agent-presets');
+/** The default profile to manage: $DSH_PROFILE, else `web`. */
+export function defaultProfile() {
+    return process.env.DSH_PROFILE ?? 'web';
 }
-/** The installed vv-controller preset directory. */
-export function installedPresetDir() {
-    return join(presetsRoot(), 'vv-controller');
+/** One profile directory inside the DSH home. */
+export function profileDir(profile) {
+    return join(dshHome(), 'profiles', profile);
 }
-/** This repository's vv-controller source directory (vvoc/lib → vvoc → repo root). */
-export function repoPresetDir() {
+/** This repository's preset bundle directory (vvoc/lib → vvoc → repo root). */
+export function bundleDir() {
     const here = dirname(fileURLToPath(import.meta.url));
-    return resolve(here, '..', '..', 'vv-controller');
+    return resolve(here, '..', '..', 'agent-presets');
+}
+/** The vv-* skills shipped inside that bundle. */
+export function bundleSkillsDir() {
+    return join(bundleDir(), 'skills');
 }
 /** The project working directory (overridable for tests). */
 export function projectDir() {

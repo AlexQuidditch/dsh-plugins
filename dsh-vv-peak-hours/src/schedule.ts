@@ -5,6 +5,11 @@
  * midnight, and may be restricted to weekdays (0=Sunday..6=Saturday). Matching
  * is against PROVIDERS, not models, and every malformed entry fails open:
  * a broken window is reported and skipped, never a block.
+ *
+ * A schedule key names a provider FAMILY and also matches every variant route
+ * of it: a config that says `deepseek` covers the runtime ids `deepseek`,
+ * `deepseek-official` and `deepseek-vision`. An exact key always wins over a
+ * family key, so one variant can still carry its own windows or mode.
  */
 
 /** One peak window in a provider schedule. */
@@ -27,14 +32,45 @@ export interface ProviderSchedule {
 /** The whole schedules map from bundle config. */
 export type PeakSchedules = Record<string, ProviderSchedule>
 
+/** A schedule entry together with the config key that supplied it. */
+export interface ResolvedSchedule {
+  /** The config key that matched — not necessarily the provider id. */
+  key: string
+  schedule: ProviderSchedule
+}
+
 /** The resolved answer for one provider at one instant. */
 export interface PeakDecision {
   /** Whether the provider is inside a peak window right now. */
   inPeak: boolean
   /** HH:MM (UTC) of the window end when in peak. */
   until?: string
+  /** The config key whose schedule matched, when one did. */
+  matched?: string
   /** Malformed windows skipped while resolving (fail-open). */
   broken: string[]
+}
+
+/**
+ * Resolve the schedule entry for a provider id.
+ *
+ * An exact key wins outright. Otherwise the LONGEST key that is a `-`-delimited
+ * prefix of the id matches, so `deepseek` covers `deepseek-official` while a
+ * more specific `deepseek-vision` entry would cover only that variant. A key
+ * never matches a provider that merely shares a prefix without the separator
+ * (`deep` must not match `deepseek`), and an unmatched provider is not an error:
+ * the gate stays open, exactly like an unknown provider.
+ */
+export function resolveSchedule(provider: string, schedules: PeakSchedules): ResolvedSchedule | undefined {
+  const exact = schedules[provider]
+  if (exact !== undefined) return { key: provider, schedule: exact }
+
+  let best: ResolvedSchedule | undefined
+  for (const key of Object.keys(schedules)) {
+    if (!provider.startsWith(`${key}-`)) continue
+    if (best === undefined || key.length > best.key.length) best = { key, schedule: schedules[key] }
+  }
+  return best
 }
 
 /** A window resolved into week-absolute minute bounds. */
@@ -94,11 +130,15 @@ function resolveWindow(window: PeakWindow): ResolvedWindow {
  * hours of the next calendar day, and the weekday restriction always applies
  * to the evaluated instant's own day. Unknown providers and broken windows
  * are never a block.
+ *
+ * The schedule is located through {@link resolveSchedule}, so a family key
+ * covers every variant route of the provider.
  */
 export function decidePeak(provider: string, now: Date, schedules: PeakSchedules): PeakDecision {
   const broken: string[] = []
-  const schedule = schedules[provider]
-  if (schedule === undefined) return { inPeak: false, broken }
+  const resolvedSchedule = resolveSchedule(provider, schedules)
+  if (resolvedSchedule === undefined) return { inPeak: false, broken }
+  const schedule = resolvedSchedule.schedule
 
   for (const window of schedule.windows) {
     let resolved: ResolvedWindow
@@ -116,7 +156,7 @@ export function decidePeak(provider: string, now: Date, schedules: PeakSchedules
     const inside = sameDay || afterMidnight
     if (!inside) continue
     if (resolved.days !== null && !resolved.days.has(clock.weekday)) continue
-    return { inPeak: true, until: `${resolved.untilLabel} ${tz}`, broken }
+    return { inPeak: true, until: `${resolved.untilLabel} ${tz}`, matched: resolvedSchedule.key, broken }
   }
   return { inPeak: false, broken }
 }

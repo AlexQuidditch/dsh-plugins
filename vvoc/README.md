@@ -5,15 +5,23 @@ CLI-порт `vvoc` из vv-opencode для DeepSeek Harness. Zero runtime-за�
 ## Команды
 
 ```bash
-vvoc install [--force]        # пресет vv-controller → ~/.dsh/.agent-presets/
-vvoc sync [--force]           # перезапись + проверка frontmatter скиллов
-vvoc status                   # пресет, скиллы, каталог аналитики
+vvoc install [--profile=<name>]   # бандл agent-presets → профиль (делегирует в dsh plugin add)
+vvoc sync [--profile=<name>]      # то же + проверка frontmatter скиллов бандла
+vvoc status [--profile=<name>]    # бандл в профиле, скиллы, каталог аналитики
 vvoc lint [paths...] [--archive] [--strict]
                               # линт .vvoc spec/plan XML (exit 1 при ошибках)
 vvoc analytics cache-hit-rate [--group-by day|week|month|session|model|provider] [--since Nd|Nw|Nm|YYYY-MM-DD] [--json]
 vvoc role list | set <role> <provider/model> [--global] | unset <role> [--global]
 vvoc preset list | show <name> | <name> [--global]
 ```
+
+Профиль берётся из `--profile=<name>`, иначе из `$DSH_PROFILE`, иначе `web`.
+
+## Пресеты
+
+До 0.2 `vvoc install` копировал каталог пресета в `~/.dsh/.agent-presets/vv-controller`. Этот каталог больше **никем не читается**: пресет в 0.2 — это declaration-строка в патче бандла. Поэтому `install`/`sync` теперь делегируют в `dsh plugin --profile <p> add <repo>/agent-presets`, а `status` проверяет, что бандл реально перечислен в `dsh.profile.bundles` профиля (а не просто скопирован на диск).
+
+После `install`/`sync` нужен перезапуск `dsh web` — строка пресета грузится на старте процесса.
 
 ## Модельные роли
 
@@ -28,7 +36,7 @@ vvoc preset list | show <name> | <name> [--global]
 ```bash
 pnpm install --store-dir ../.pnpm-store --offline
 pnpm run build
-pnpm test          # node --test: 24 кейса (lint, analytics, roles/preset, install/sync)
+pnpm test          # node --test: lint, analytics, roles/preset, install/sync
 ```
 
 Тесты используют фейковые `DSH_HOME`/cwd (`VVOC_TEST_*`) и не трогают реальный `~/.dsh`.

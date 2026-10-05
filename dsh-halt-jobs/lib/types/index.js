@@ -15,6 +15,13 @@ function sessionIdOf(payload) {
     const value = payload.sessionId;
     return typeof value === 'string' && value !== '' ? value : undefined;
 }
+/**
+ * Owning session of one job projection. 0.2 `JobView` calls it `owner`;
+ * pre-0.2 builds spelled it `ownerSession`, so both are read.
+ */
+function ownerOf(job) {
+    return job.owner ?? job.ownerSession;
+}
 export function apply(ctx) {
     const jobs = ctx.get('jobs');
     const agents = ctx.get('agents');
@@ -32,13 +39,15 @@ export function apply(ctx) {
             if (sessionId === undefined) {
                 return failure('halt-jobs/bad-request', 'payload.sessionId must be a non-empty string');
             }
-            const caller = agents.get(sessionId);
-            if (caller === undefined) {
+            // Liveness gate: the session must own a live agent in this process.
+            if (agents.get(sessionId) === undefined) {
                 return failure('halt-jobs/session-not-live', `no live agent for session ${JSON.stringify(sessionId)}`);
             }
+            // The registry's isolation fence compares `job.owner.id === caller`,
+            // so the caller argument is the SESSION ID string.
             let owned;
             try {
-                owned = jobs.list(caller).filter((job) => job.ownerSession === sessionId);
+                owned = jobs.list(sessionId).filter((job) => ownerOf(job) === sessionId);
             }
             catch (error) {
                 return failure('halt-jobs/read-failed', error instanceof Error ? error.message : String(error));
@@ -48,7 +57,7 @@ export function apply(ctx) {
                 if (job.status !== 'running')
                     continue;
                 try {
-                    jobs.kill(job.id, caller, 'stopped from the session-header stop pill');
+                    jobs.kill(job.id, sessionId, 'stopped from the session-header stop pill');
                     stopped += 1;
                 }
                 catch {
@@ -57,8 +66,8 @@ export function apply(ctx) {
             }
             let remaining = 0;
             try {
-                for (const job of jobs.list(caller)) {
-                    if (job.ownerSession !== sessionId)
+                for (const job of jobs.list(sessionId)) {
+                    if (ownerOf(job) !== sessionId)
                         continue;
                     if (job.status === 'running' || job.status === 'stopping')
                         remaining += 1;

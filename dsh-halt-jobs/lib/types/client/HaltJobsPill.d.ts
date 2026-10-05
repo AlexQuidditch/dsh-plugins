@@ -20,17 +20,26 @@ export type StopAllOutcome = {
     ok: false;
     message: string;
 };
-/** Minimal selector-hook shape over the sessions store. */
-export type UseSessions = <T>(select: (state: {
-    jobsBySession?: Record<string, readonly HaltJobView[] | undefined>;
+/**
+ * Minimal selector-hook shape over the client jobs store.
+ *
+ * The snapshot is `{ rows, observed }`, keyed by session id — the 0.2 shape
+ * (`ctx.jobs.state`). A session with no live job has no `rows` key at all.
+ */
+export type UseJobs = <T>(select: (state: {
+    rows?: Record<string, readonly HaltJobView[] | undefined>;
 }) => T) => T;
+/** Open one session's roster stream; the returned release closes it. */
+export type WatchRows = (sessionId: string) => (() => void) | undefined;
 interface HaltJobsPillProps {
     /** Session whose jobs this pill stops; standard prop of the actions slot. */
     sessionId?: string;
-    /** Sessions-store selector hook; standard prop of the actions slot. */
-    useSessions?: UseSessions;
+    /** Client-jobs selector hook, provided through `hooks: { jobs }`. */
+    useJobs?: UseJobs;
+    /** Roster-stream opener from the client `jobs` service (inject share). */
+    watchRows?: WatchRows;
     /** Wire call into the host half's `/dsh-halt-jobs` channel (inject share). */
     stopAll: (sessionId: string) => Promise<StopAllOutcome>;
 }
-export declare function HaltJobsPill({ sessionId, useSessions, stopAll }: HaltJobsPillProps): import("react").JSX.Element | null;
+export declare function HaltJobsPill({ sessionId, useJobs, watchRows, stopAll }: HaltJobsPillProps): import("react").JSX.Element | null;
 export {};

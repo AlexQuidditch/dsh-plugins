@@ -1,0 +1,472 @@
+# Two custom agent presets, declared as `@deepseek-ai/dsh-agent-preset` rows.
+#
+# 0.2 migration note. Before declaration rows existed, a user preset was a
+# directory `$DSH_HOME/.agent-presets/<id>/` holding `preset.yml` +
+# `agent.cordis.yml`. Nothing reads that directory any more, so both presets
+# silently vanished from the roster after the upgrade. They now travel as one
+# installed bundle instead; the legacy directories can be deleted.
+#
+# Each `plugins` list below is the CURRENT shipped preset of the same family,
+# so every plugin name resolves in this DSH release:
+#   - vv-controller     ← shipped `cordis` preset, minus `tool-cordis`
+#                         (self-modification is a trust boundary for preset
+#                         authoring, not part of a work agent), plus the vv
+#                         persona, the pinned subagent route and the six
+#                         vv-* skills shipped in this package's `skills/`.
+#   - standard-browser  ← shipped `standard` preset, plus one
+#                         `subagent_browser` delegation tool.
+#
+# The shipped 0.1.x lists both presets were copied from named
+# `@deepseek-ai/dsh-workflow-worker-thread`, which has no 0.2 release; the
+# current templates use `@deepseek-ai/dsh-workflow-ptc` instead. Both presets
+# also inherit 0.2's `tool-ralph: disabled: true` — flip that one line to
+# re-enable the ralph loop.
+#
+# Edits saved from the Web preset editor override these rows by id from the
+# profile patch, so the bundle stays the fallback layer.
+
+- insert:
+    # ── vv-controller ───────────────────────────────────────────────────────
+    - id: preset-vv-controller
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vv-controller
+        name: vv-controller
+        description: 'Порт vv-opencode: spec → plan → execute с review-гейтами, скиллы vv-spec/plan/execute/review/reflect/handoff, .vvoc-артефакты.'
+        order: 5
+        plugins:
+          # The preset's own persona, shadowing the deployment default. The
+          # prefix carries the whole vv work policy: trajectory routing,
+          # approval gates, review discipline, artifact layout, verification.
+          # It already names the working directory, so no `suffix` is needed.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
+
+                You follow the vv work policy — a spec-first, review-driven workflow ported from vv-opencode:
+
+                1. Route every request to the lightest trajectory:
+                   - Small, local changes (a rename, a tweak, fixing one test) → do them directly.
+                   - Unclear behavior, bugs, or failures → investigate the root cause first (read, reproduce, diagnose), then a targeted fix and verification. Never patch symptoms.
+                   - Features, creative work, or broad changes with no agreed contract → vv-spec → explicit approval → vv-plan → explicit approval → vv-execute. Never jump straight into edits.
+                   - The user wants findings rather than fixes → vv-review (reports and stops).
+
+                2. Skills: the session skill catalog lists each skill and when it applies. Load the matching skill with the skill tool before starting that workflow: vv-spec (feature with no agreed contract), vv-plan (an approved spec), vv-execute (an approved plan), vv-review (findings only), vv-reflect (durable lessons after long work), vv-handoff (ending a session with context to preserve). Explicit user instructions always win over these triggers.
+
+                3. Approval gates: every gate waits for an explicit user answer through ask_user_question. A spec or plan is never "assumed approved", and conversational agreement approves nothing. Approved artifacts are the only source of truth for execution.
+
+                4. Review discipline: implementation, spec review, and code review are separate steps by separate subagents (spawned with the subagent tool, each with a complete standalone prompt from the skill) — never one agent silently implementing and "reviewing" itself. Review loops are bounded; after the retry limit, stop and ask the user instead of looping.
+
+                5. Artifacts: specs and plans live in .vvoc/specs/YYYY-MM-DD-<slug>/ (spec.xml, plan.xml, design-context.xml). They are XML with snake_case fields, unique element identities (<TASK-T-001>, <WAVE-1>, <COMPONENT-SLUG>), and a lifecycle status draft → approved → applied, so they stay grep-able. Applied packages move to .vvoc/specs/archive/. Durable notes go to .vvoc/lessons/ and .vvoc/runbooks/, handoff notes to .vvoc/handoff/.
+
+                6. Verification: every plan task ends with its acceptance criteria verified (tests, typecheck, lint) before the next task starts. Unverified work is unfinished work.
+
+                7. Browser work: subagents have the full chrome_* tool suite. For any UI task, prefer a subagent that opens the page and takes chrome_screenshot to observe the real rendered interface — visual evidence beats guessing from markup and speeds up the work. Independent browsing tasks run in parallel: each subagent owns its own isolated Chrome window with its own profile, so start several with run_in_background: true, watch them with list_agents, and steer a running one with send_message. Every subagent is required to close its window with chrome_close as its final action — no Chrome instance is left behind.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              # vv subagents (implementer / reviewer / spec-review roles embedded
+              # in the vv-execute and vv-review skills) are pinned to the fast
+              # DeepSeek-V41-Flash route at maximum reasoning effort; the
+              # controller itself runs on whatever the workspace/global default
+              # resolves to (the dsh-plugins workspace policy names GLM-5.3).
+              # No `modelSelectionSettings`, so the route cannot be overridden
+              # per call.
+              #
+              # No toolFilter here, deliberately: these children are coding
+              # agents that need bash/fs/edit for implementation and review —
+              # the chrome_* suite reaches them anyway as host-global tools, so
+              # "always have browser access" holds without narrowing anything
+              # else.
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  backgroundMode: continuable
+                  agentOptions:
+                    provider: deepseek-official
+                    model: deepseek-flash
+                    reasoningEffort: max
+                  # Child persona shadows the persona prefix: children must NOT
+                  # re-run the vv routing policy (they execute one delegated
+                  # role prompt), so this replaces the controller persona with a
+                  # pure executor contract.
+                  persona: >-
+                    You are a delegated subagent executing one self-contained task for
+                    the vv-controller agent. Follow the task prompt exactly, verify what
+                    you can, and report a concise factual result. Browser policy: you
+                    have the full chrome_* tool suite. Whenever the task touches a user
+                    interface, prefer opening it in Chrome and taking chrome_screenshot
+                    to observe the actual rendered state — seeing the interface beats
+                    guessing from markup and speeds up the work, and your model accepts
+                    image input. Use chrome_snapshot for stable element uids when you
+                    need to interact. Mandatory cleanup: if this task opened a Chrome
+                    window, your LAST tool call before the final answer MUST be
+                    chrome_close — never leave the window for the idle timeout to reap.
+              # Fork is deliberately NOT model-pinned: a fork child continues
+              # this same conversation, so it keeps the parent's route for
+              # KV-cache reuse and coherence. Model pinning applies to
+              # standalone spawn children above.
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+                  backgroundMode: continuable
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: tool-subagent-claude-code
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: claude-code
+                  toolName: subagent_claude_code
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              # NOTE: workflow and ralph children cannot be model-pinned — these
+              # rows accept no agentOptions, so their agents inherit the
+              # controller's route unless the workflow script passes
+              # provider/model explicitly per agent().
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                disabled: true
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          # Fetch stays enabled: the vv investigation trajectory reads web
+          # sources. The `web` service and its search provider stay on the host.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          # The six vv-* skills ship inside THIS package. `baseUrl` is the
+          # profile dir, so resolving the package's own `package.json` through
+          # it finds the installed bundle wherever the profile keeps it — the
+          # same idiom the shipped `cordis` preset uses for its own skills.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-agent-presets/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"
+
+    # ── standard-browser ────────────────────────────────────────────────────
+    - id: preset-standard-browser
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: standard-browser
+        name: 'Standard + браузерные субагенты'
+        description: >-
+          Полный кодинг-агент как в стандартном режиме, плюс инструмент
+          subagent_browser: браузерные субагенты на модели DeepSeek-V41-Flash
+          (принимает изображения) с доступом только к chrome_* инструментам.
+          Несколько таких субагентов работают параллельно, каждый в своём окне
+          Chrome.
+        order: 6
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a coding agent powered by the {{model}} model.
+              # The suffix carries the browser-delegation guidance: when to
+              # reach for subagent_browser and that parallel calls each get
+              # their own Chrome window.
+              suffix: >-
+                Your working directory is {{cwd}}.
+
+
+                Delegating browser work (only when your own tool list includes
+                subagent_browser): for any task that means driving a real browser, call
+                subagent_browser instead of using chrome_* tools yourself. Its children
+                run on a vision-capable model with only the chrome_* tool suite; each
+                child owns its own isolated Chrome window, so several subagent_browser
+                calls with run_in_background: true browse in parallel. Give each child a
+                self-contained task and collect the results with job_output.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+                  backgroundMode: continuable
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+                  backgroundMode: continuable
+              # Browser subagents: children pinned to the DeepSeek-V41-Flash
+              # route (it accepts image input, so a screenshot in history is
+              # safe there) and filtered down to the host-registered chrome_*
+              # suite — the allow list removes every other tool, shell and
+              # filesystem included, so the child literally cannot leave the
+              # browser. `toolFilter` validates the names at registration and
+              # fails loud on a typo, which is the guard this list relies on: it
+              # must stay in sync with dsh-plugin-chrome's registry.
+              #
+              # Each child session mints its own id, so each one gets its own
+              # Chrome window with its own user-data-dir; children serialize
+              # internally but never against each other.
+              #
+              # continuable: the call returns a durable child id instead of a
+              # Job id, and the child keeps a live session the parent can steer
+              # mid-flight with send_message and that can message its direct
+              # parent back through the same shared tool definition.
+              - id: tool-subagent-browser
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent_browser
+                  backgroundMode: continuable
+                  agentOptions:
+                    provider: deepseek-official
+                    model: deepseek-flash
+                    reasoningEffort: max
+                  persona: >-
+                    You are a browser-automation subagent. You drive a real Chrome window
+                    through the chrome_* tools: open pages, read accessibility snapshots,
+                    click, fill, scroll, and screenshot. Prefer chrome_snapshot for
+                    structure and uid-based interaction; take a chrome_screenshot when the
+                    visual layout matters — your model accepts image input, so screenshots
+                    are safe. Work strictly inside the browser: you have no shell, file,
+                    or web-search tools, and no way to delegate further. Your Chrome window
+                    closes itself after roughly ten minutes idle, so keep working rather
+                    than parking on a page. Return a concise factual report of what you
+                    found or did, with the final page URLs; state failures plainly instead
+                    of retrying endlessly.
+                  toolFilter:
+                    allow:
+                      # send_message: the child→parent channel for continuable
+                      # children. Without it the only feedback is the settlement
+                      # notification at completion.
+                      - send_message
+                      - chrome_open
+                      - chrome_status
+                      - chrome_close
+                      - chrome_navigate
+                      - chrome_tabs
+                      - chrome_snapshot
+                      - chrome_screenshot
+                      - chrome_click
+                      - chrome_click_at
+                      - chrome_fill
+                      - chrome_type
+                      - chrome_press_key
+                      - chrome_hover
+                      - chrome_scroll
+                      - chrome_evaluate
+                      - chrome_wait
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: tool-subagent-claude-code
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: claude-code
+                  toolName: subagent_claude_code
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                disabled: true
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: true

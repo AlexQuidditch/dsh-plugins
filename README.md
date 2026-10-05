@@ -19,28 +19,30 @@
 
 | Пакет | Что делает |
 | --- | --- |
-| `vvoc` | CLI-порт `vvoc`: `install`/`sync`/`status` (пресет vv-controller), `lint` (проверка `.vvoc`-артефактов), `analytics cache-hit-rate` (агрегация JSONL), `role`/`preset` (модельные роли). Zero-deps, ставится `npm link` / `node vvoc/lib/bin.js`. |
+| `vvoc` | CLI-порт `vvoc`: `install`/`sync`/`status` (ставит бандл `agent-presets` в профиль), `lint` (проверка `.vvoc`-артефактов), `analytics cache-hit-rate` (агрегация JSONL), `role`/`preset` (модельные роли). Zero-deps, ставится `npm link` / `node vvoc/lib/bin.js`. |
 
 ## Пресеты
 
 | Директория | Что это |
 | --- | --- |
-| `vv-controller` | Агент-пресет: порт [vv-opencode](https://github.com/osovv/vv-opencode) на DSH — spec → plan → execute с review-гейтами, `.vvoc`-артефактами и скиллами `vv-spec`, `vv-plan`, `vv-execute`, `vv-review`, `vv-reflect`, `vv-handoff`. |
+| `agent-presets` | Бандл с двумя агент-пресетами: `vv-controller` (порт [vv-opencode](https://github.com/osovv/vv-opencode) — spec → plan → execute с review-гейтами, скиллы `vv-spec`/`vv-plan`/`vv-execute`/`vv-review`/`vv-reflect`/`vv-handoff`, `.vvoc`-артефакты) и `standard-browser` (штатный `standard` + браузерные субагенты через `subagent_browser`). |
 
-Пресет — это не бандл: он ставится копированием в пользовательский root DSH:
+Пресет в 0.2 — это declaration-строка `@deepseek-ai/dsh-agent-preset` в патче бандла, а не каталог. Ставится как обычный бандл:
 
 ```bash
-scripts/install-vv-controller.sh            # установить в ~/.dsh/.agent-presets/vv-controller
-scripts/install-vv-controller.sh --force    # перезаписать (старая копия → .bak-<timestamp>)
+dsh plugin --profile web add ~/projects/dsh-plugins/agent-presets
+# затем перезапуск dsh web: строка пресета грузится на старте процесса
 ```
 
-После установки создайте в веб-интерфейсе новую сессию и выберите пресет `vv-controller`. Проверка: в каталоге скиллов сессии должны появиться шесть `vv-*` скиллов. Обновление пресета — `--force` и новая сессия (пресет читается при старте сессии).
+Проверка: новая сессия с пресетом `vv-controller` должна показать шесть `vv-*` скиллов в каталоге; сессия с `standard-browser` — инструмент `subagent_browser`.
 
-Состав пресета:
+Состав:
 
-- `agent.cordis.yml` — копия shipped-пресета `cordis` минус self-modification-инструменты, с персоной-политикой vv-controller (маршрутизация: прямое изменение / расследование / spec → plan → execute);
-- `skills/*/SKILL.md` — шесть скиллов рабочего процесса; роли ревьюеров и имплементера живут как самодостаточные промпты суб-агентов внутри `vv-execute`/`vv-review` (в DSH нет реестра именованных агентов — роли spawn'ятся через `subagent`);
+- `cordis.patch.yml` — две строки-декларации; каждая список `plugins` — это текущий shipped-пресет того же семейства (`cordis` / `standard`) плюс дельты, поэтому имена пакетов не устаревают вместе с бандлом;
+- `skills/*/SKILL.md` — шесть vv-скиллов; роли ревьюеров и имплементера живут как самодостаточные промпты суб-агентов внутри `vv-execute`/`vv-review` (в DSH нет реестра именованных агентов — роли spawn'ятся через `subagent`);
 - артефакты совместимы с vv-opencode: `.vvoc/specs/YYYY-MM-DD-<slug>/{spec,plan,design-context}.xml`, `archive/`, `.vvoc/lessons`, `.vvoc/runbooks`, `.vvoc/handoff` — те же пути и XML-формат, так что один проект можно вести и из OpenCode, и из DSH.
+
+Подробности миграции с 0.1 (старый `~/.dsh/.agent-presets/<id>/` больше не читается) — в `agent-presets/README.md`.
 
 ## Установка у коллеги
 
@@ -57,9 +59,9 @@ dsh plugin --profile web add dsh-vv-context
 dsh plugin --profile web add dsh-vv-peak-hours
 dsh plugin --profile web add dsh-vv-spec-guard
 dsh plugin --profile web add dsh-managed-sessions
+dsh plugin --profile web add agent-presets     # пресеты vv-controller + standard-browser
 
-# пресет vv-controller + CLI:
-./scripts/install-vv-controller.sh
+# CLI:
 npm link vvoc    # или node vvoc/lib/bin.js <cmd>
 
 dsh web --host 127.0.0.1 --port 3080 --no-open   # перезапуск, чтобы подхватить бандлы

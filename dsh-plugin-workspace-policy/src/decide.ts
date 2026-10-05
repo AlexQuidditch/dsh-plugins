@@ -10,7 +10,7 @@
  * Decision rules implemented here:
  * - Master sessions get the `model.default` route only on their very first
  *   request (turn 1, step 1), only when the session started fresh
- *   (`agent/session-start` source `startup`), only when no request header is
+ *   (`agent/created` source `startup`, 0.1's `agent/session-start`), only when no request header is
  *   logged yet, and only when no explicit user model selection is pending.
  * - Worker agents (delegation depth > 0) get the `model.workers` route on
  *   their first request in this process, unconditionally: the workspace
@@ -26,7 +26,7 @@ import type { PolicyBudgetSection, PolicyRoute, WorkspacePolicy } from './types.
 
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 
-/** Why a session lifecycle began, as reported by `agent/session-start`. */
+/** Why a session lifecycle began, as reported by `agent/created`. */
 export type SessionStartSourceLite = 'startup' | 'resume' | 'clear' | 'compact'
 
 /** The exact request-config type crossing the `agent/request` waterfall. */

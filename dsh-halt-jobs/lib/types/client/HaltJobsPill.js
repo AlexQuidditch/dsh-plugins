@@ -3,9 +3,12 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
  * Text stop button in `conversation.session.header.actions`, immediately right
  * of the shipped background-jobs selector (`job-list`, order 20).
  *
- * Live/disabled state tracks `jobsBySession` via `useSessions` with no wire
- * traffic of its own. The only host call is `stop-all` on `/dsh-halt-jobs`,
- * injected as a prop by the registering module (./index.tsx).
+ * Job state comes from the client `jobs` service through the slot's `useJobs`
+ * hook (fed by `hooks: { jobs }` on the registration), with `watchRows` opening
+ * the session's roster stream — the 0.2 replacement for the old
+ * `useSessions(state => state.jobsBySession[id])` projection. The only host
+ * call is `stop-all` on `/dsh-halt-jobs`, injected as a prop by the
+ * registering module (./index.tsx).
  */
 import { useEffect, useMemo, useState } from 'react';
 import styles from './HaltJobsPill.module.css';
@@ -15,8 +18,15 @@ const NO_JOBS = [];
 function isLive(job) {
     return job.status === 'running' || job.status === 'stopping';
 }
-export function HaltJobsPill({ sessionId = '', useSessions, stopAll }) {
-    const jobs = useSessions?.((state) => state.jobsBySession?.[sessionId]) ?? NO_JOBS;
+export function HaltJobsPill({ sessionId = '', useJobs, watchRows, stopAll }) {
+    // The roster is streamed per watched session, so the pill must open the
+    // stream itself: with no watcher, `rows[sessionId]` stays empty forever.
+    useEffect(() => {
+        if (sessionId === '' || typeof watchRows !== 'function')
+            return;
+        return watchRows(sessionId);
+    }, [sessionId, watchRows]);
+    const jobs = useJobs?.((state) => state.rows?.[sessionId]) ?? NO_JOBS;
     const live = useMemo(() => jobs.filter(isLive).length, [jobs]);
     const settled = jobs.length - live;
     const [busy, setBusy] = useState(false);

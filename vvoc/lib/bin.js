@@ -4,18 +4,19 @@
  * the pure modules so tests can drive the same code directly.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { analyticsTable } from './analytics.js';
-import { checkInstalledPreset, installPreset } from './install.js';
+import { assertBundle, checkBundleSkills, installCommand, presetInstalled, reportBundle } from './install.js';
 import { resolveEngine } from './lint.js';
-import { analyticsDir, projectDir } from './paths.js';
+import { analyticsDir, defaultProfile, projectDir } from './paths.js';
 import { applyPreset, listPresets, listRoles, setRole, unsetRole, validateModel, validateRoleId } from './roles.js';
 const USAGE = `vvoc — порт CLI vv-opencode для DeepSeek Harness
 
 Команды:
-  vvoc install [--force]                     установить пресет vv-controller в ~/.dsh/.agent-presets
-  vvoc sync [--force]                        install --force + проверка frontmatter скиллов
-  vvoc status                                состояние пресета, скиллов и файлов аналитики
+  vvoc install [--profile=<name>]             установить бандл agent-presets в профиль (dsh plugin add)
+  vvoc sync [--profile=<name>]                то же + проверка frontmatter скиллов бандла
+  vvoc status [--profile=<name>]              бандл в профиле, скиллы и файлы аналитики
   vvoc lint [paths...] [--archive] [--strict]
                                              линт .vvoc spec/plan XML (по умолчанию .vvoc/specs)
   vvoc analytics cache-hit-rate [--group-by day|week|month|session|model|provider] [--since Nd|Nw|Nm|YYYY-MM-DD] [--json]
@@ -25,7 +26,29 @@ const USAGE = `vvoc — порт CLI vv-opencode для DeepSeek Harness
   vvoc preset list                           именованные пресеты ролей
   vvoc preset show <name>
   vvoc preset <name> [--global]              применить пресет (записать roles атомарно)
+
+Профиль берётся из --profile=<name>, иначе из $DSH_PROFILE, иначе 'web'.
 `;
+const spawnRunner = (command, args) => {
+    const result = spawnSync(command, args, { stdio: 'inherit' });
+    if (result.error !== undefined && result.error !== null) {
+        console.error(`не удалось запустить ${command}: ${result.error.message}`);
+        console.error(`выполните вручную: ${command} ${args.join(' ')}`);
+        return 1;
+    }
+    return result.status ?? 1;
+};
+/** Read `--profile=<name>` out of the raw flag set. */
+function profileFrom(flags) {
+    for (const flag of flags) {
+        if (flag.startsWith('--profile=')) {
+            const value = flag.slice('--profile='.length);
+            if (value !== '')
+                return value;
+        }
+    }
+    return defaultProfile();
+}
 function parseArgs(argv) {
     const flags = new Set();
     const rest = [];
@@ -211,40 +234,45 @@ function commandPreset(rest, flags) {
     console.log(`пресет ${rest[0]} применён (${globalScope ? 'global' : 'project'})`);
     return 0;
 }
-export async function main(argv) {
+export async function main(argv, run = spawnRunner) {
     const { command, rest, flags } = parseArgs(argv);
     switch (command) {
         case 'install':
         case 'sync': {
             try {
-                const result = installPreset(command === 'sync' || hasFlag(flags, '--force'));
-                if (result.backup !== undefined)
-                    console.log(`старая копия: ${result.backup}`);
-                console.log(`установлено: ${result.path}`);
-                if (command === 'sync') {
-                    const report = checkInstalledPreset();
-                    const bad = report.skills.filter((skill) => !skill.ok);
-                    console.log(`скиллы: ${report.skills.length} (${report.skills.filter((skill) => skill.ok).length} ok, ${bad.length} с проблемами)`);
-                    for (const skill of bad)
-                        console.log(`  ${skill.name}: ${skill.reason ?? 'проблема'}`);
-                    return bad.length > 0 ? 1 : 0;
-                }
-                return 0;
+                assertBundle();
             }
             catch (error) {
                 console.error(error instanceof Error ? error.message : String(error));
                 return 1;
             }
+            const profile = profileFrom(flags);
+            // `installCommand` is the argv AFTER the `dsh` binary.
+            const code = run('dsh', installCommand(profile));
+            if (code !== 0)
+                return code;
+            if (command === 'sync') {
+                const skills = checkBundleSkills();
+                const bad = skills.filter((skill) => !skill.ok);
+                console.log(`скиллы: ${skills.length} (${skills.length - bad.length} ok, ${bad.length} с проблемами)`);
+                for (const skill of bad)
+                    console.log(`  ${skill.name}: ${skill.reason ?? 'проблема'}`);
+                return bad.length > 0 ? 1 : 0;
+            }
+            console.log(`профиль ${profile}: бандл ${presetInstalled(profile) ? 'в списке' : 'НЕ в списке'}`);
+            console.log('дальше: перезапустите dsh web — строка пресета грузится на старте процесса');
+            return 0;
         }
         case 'status': {
-            const report = checkInstalledPreset();
-            if (!report.installed) {
-                console.log('пресет vv-controller не установлен (vvoc install)');
-                console.log(`целевой путь: ${report.path}`);
-                return 0;
+            const report = reportBundle(profileFrom(flags));
+            console.log(`бандл: ${report.bundle}`);
+            console.log(`профиль ${report.profile}: ${report.installed ? 'установлен' : 'НЕ установлен (vvoc install)'}`);
+            if (report.skills.length === 0) {
+                console.log('скиллы: не найдены');
             }
-            console.log(`пресет установлен: ${report.path}`);
-            console.log(`скиллы: ${report.skills.map((skill) => `${skill.name}${skill.ok ? '' : '(!)'}`).join(', ')}`);
+            else {
+                console.log(`скиллы: ${report.skills.map((skill) => `${skill.name}${skill.ok ? '' : '(!)'}`).join(', ')}`);
+            }
             const dir = analyticsDir();
             console.log(`аналитика: ${dir} (${existsSync(dir) ? 'есть данные' : 'пока пусто'})`);
             return 0;

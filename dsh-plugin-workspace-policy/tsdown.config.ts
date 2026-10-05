@@ -11,4 +11,9 @@ export default defineConfig({
   outDir: 'lib',
   clean: true,
   outExtensions: () => ({ js: '.js' }),
+  // The loader imports this file from the linked package directory, so bare
+  // dependencies are not resolved from the profile's node_modules.
+  deps: {
+    alwaysBundle: ['schemastery', 'js-yaml'],
+  },
 })

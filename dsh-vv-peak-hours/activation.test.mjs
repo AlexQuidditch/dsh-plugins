@@ -9,7 +9,7 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from './lib/index.js'
-import { decidePeak } from './lib/schedule.js'
+import { decidePeak, resolveSchedule } from './lib/schedule.js'
 
 let failed = 0
 function check(name, condition, detail = '') {
@@ -47,13 +47,41 @@ const BROKEN = { p: { windows: [{ start: '25:99', end: '04:00', tz: 'UTC' }] } }
 const brokenDecision = decidePeak('p', wed0700, BROKEN)
 check('broken window fails open', brokenDecision.inPeak === false && brokenDecision.broken.length === 1)
 
+// ── матчинг провайдеров: ключ конфига — СЕМЕЙСТВО, а не id рантайма ─────────
+//
+// Регрессия: конфиг называет расписание `deepseek`, а рантайм зовёт провайдера
+// `deepseek-official`. Пока матчинг был точным, гейт не срабатывал никогда —
+// при этом тесты ниже (и водопад) использовали ключ конфига как имя
+// провайдера, поэтому оставались зелёными.
+check('family: deepseek-official inside the window', decidePeak('deepseek-official', wed0700, DEEPSEEK).inPeak === true)
+check('family: deepseek-vision inside the window', decidePeak('deepseek-vision', wed0700, DEEPSEEK).inPeak === true)
+check('family: bare key still matches', decidePeak('deepseek', wed0700, DEEPSEEK).inPeak === true)
+check('family: matched key is reported', decidePeak('deepseek-official', wed0700, DEEPSEEK).matched === 'deepseek')
+check('family: outside the window is not peak', decidePeak('deepseek-official', wed2200, DEEPSEEK).inPeak === false)
+check('family: unrelated provider never peak', decidePeak('zai', wed0700, DEEPSEEK).inPeak === false)
+// Разделитель обязателен: `deepseek` не должен цеплять `deepseekish` или `deep`.
+check('family: separator required (deepseekish excluded)', decidePeak('deepseekish', wed0700, DEEPSEEK).inPeak === false)
+check('family: separator required (deep excluded)', decidePeak('deep', wed0700, DEEPSEEK).inPeak === false)
+
+// Точный ключ всегда важнее семейного — вариант может нести свои окна/режим.
+const OVERRIDE = {
+  deepseek: { windows: [{ start: '01:00', end: '04:00', tz: 'UTC' }] },
+  'deepseek-vision': { windows: [{ start: '06:00', end: '10:00', tz: 'UTC' }] },
+}
+const override = resolveSchedule('deepseek-vision', OVERRIDE)
+check('exact key wins over family', override?.key === 'deepseek-vision', JSON.stringify(override?.key))
+check('exact key: vision in its own window', decidePeak('deepseek-vision', wed0700, OVERRIDE).inPeak === true)
+check('exact key: official keeps the family window', decidePeak('deepseek-official', wed0700, OVERRIDE).inPeak === false && decidePeak('deepseek-official', wed0100, OVERRIDE).inPeak === true)
+const longest = resolveSchedule('deepseek-vision-x', OVERRIDE)
+check('longest family key wins', longest?.key === 'deepseek-vision', JSON.stringify(longest?.key))
+
 // ── интеграция водопада ─────────────────────────────────────────────────────
 async function* fakeStream() { yield { type: 'text' } }
 const mkOptions = (provider) => ({ provider })
 
 const softRoot = new Context()
 await softRoot.plugin(plugin, { mode: 'soft', schedules: { deepseek: { windows: [{ start: '00:00', end: '23:59', tz: 'UTC' }] } } })
-const softResult = await softRoot.waterfall({}, 'llm/stream', mkOptions('deepseek'), () => fakeStream())
+const softResult = await softRoot.waterfall({}, 'llm/stream', mkOptions('deepseek-official'), () => fakeStream())
 check('soft: stream passes through', typeof softResult?.[Symbol.asyncIterator] === 'function' || softResult === undefined || softResult !== null, String(softResult))
 await softRoot.fiber.dispose()
 
@@ -61,7 +89,7 @@ const hardRoot = new Context()
 await hardRoot.plugin(plugin, { mode: 'hard', schedules: { deepseek: { windows: [{ start: '00:00', end: '23:59', tz: 'UTC' }] } } })
 let blocked = ''
 try {
-  await hardRoot.waterfall({}, 'llm/stream', mkOptions('deepseek'), () => fakeStream())
+  await hardRoot.waterfall({}, 'llm/stream', mkOptions('deepseek-official'), () => fakeStream())
 } catch (error) {
   blocked = String(error && error.message ? error.message : error)
 }
@@ -72,10 +100,27 @@ const unknownRoot = new Context()
 await unknownRoot.plugin(plugin, { mode: 'hard', schedules: { deepseek: { windows: [{ start: '00:00', end: '23:59', tz: 'UTC' }] } } })
 let unknownThrew = false
 try {
-  await unknownRoot.waterfall({}, 'llm/stream', mkOptions('other'), () => fakeStream())
+  await unknownRoot.waterfall({}, 'llm/stream', mkOptions('zai'), () => fakeStream())
 } catch { unknownThrew = true }
-check('hard: unknown provider not blocked', unknownThrew === false)
+check('hard: unrelated provider (zai) not blocked', unknownThrew === false)
 await unknownRoot.fiber.dispose()
+
+// Режим на КОНКРЕТНОМ семействе: глобальный soft, но `deepseek` объявлен hard.
+// Тот же точный поиск `schedules[provider]?.mode`, что и в решении о пике:
+// с id `deepseek-official` он не находил ключ `deepseek` и молча оставался soft.
+const familyHardRoot = new Context()
+await familyHardRoot.plugin(plugin, {
+  mode: 'soft',
+  schedules: { deepseek: { windows: [{ start: '00:00', end: '23:59', tz: 'UTC' }], mode: 'hard' } },
+})
+let familyBlocked = ''
+try {
+  await familyHardRoot.waterfall({}, 'llm/stream', mkOptions('deepseek-official'), () => fakeStream())
+} catch (error) {
+  familyBlocked = String(error && error.message ? error.message : error)
+}
+check('hard via family key: PEAK_HOURS_BLOCK thrown', familyBlocked.includes('PEAK_HOURS_BLOCK'), familyBlocked)
+await familyHardRoot.fiber.dispose()
 
 if (failed > 0) { console.log(`FAILED: ${failed}`); process.exit(1) }
 console.log('OK: schedule-движок и llm/stream-гейт работают')

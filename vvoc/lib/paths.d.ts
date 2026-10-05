@@ -5,12 +5,14 @@ export declare const env: {
 };
 /** The DeepSeek Harness home: $DSH_HOME, else ~/.dsh. */
 export declare function dshHome(): string;
-/** The user preset root inside the DSH home. */
-export declare function presetsRoot(): string;
-/** The installed vv-controller preset directory. */
-export declare function installedPresetDir(): string;
-/** This repository's vv-controller source directory (vvoc/lib → vvoc → repo root). */
-export declare function repoPresetDir(): string;
+/** The default profile to manage: $DSH_PROFILE, else `web`. */
+export declare function defaultProfile(): string;
+/** One profile directory inside the DSH home. */
+export declare function profileDir(profile: string): string;
+/** This repository's preset bundle directory (vvoc/lib → vvoc → repo root). */
+export declare function bundleDir(): string;
+/** The vv-* skills shipped inside that bundle. */
+export declare function bundleSkillsDir(): string;
 /** The project working directory (overridable for tests). */
 export declare function projectDir(): string;
 /** Project-level vvoc config path. */

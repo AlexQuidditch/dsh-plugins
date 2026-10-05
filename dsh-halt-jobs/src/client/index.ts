@@ -5,10 +5,12 @@
  * title-adjacent strip that also hosts the shipped background-jobs selector
  * (`job-list`, order 20) — at order 100, immediately to its right.
  *
- * The pill's count reads the framework's own `jobsBySession` projection
- * (standard `useSessions` slot prop), so there is no polling channel. The only
- * wire call is the `stop-all` endpoint on the host half's `/dsh-halt-jobs`
- * Connection channel, made through the client's `connection` service.
+ * The pill's live count reads the client `jobs` service (`ctx.jobs.state`)
+ * through the slot's `useJobs` hook, and `watchRows` opens the session's roster
+ * stream. That pair replaces the pre-0.2 `useSessions(state => state.jobsBySession)`
+ * projection, which 0.2 removed. The only wire call is the `stop-all` endpoint
+ * on the host half's `/dsh-halt-jobs` Connection channel, made through the
+ * client's `connection` service.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the SlotMap merge so the actions key resolves.
@@ -32,16 +34,27 @@ interface ConnectionLike {
   }
 }
 
+/**
+ * Structural slice of the client `jobs` service (0.2): the selector store the
+ * renderer wraps as `useJobs`, and the reference-counted roster stream opener.
+ */
+interface JobsLike {
+  /** `ClientJobsModel`: `getSnapshot()` + `subscribe()`, handed to the hook bag. */
+  state: unknown
+  watchRows(sessionId: string): (() => void) | undefined
+}
+
 /** Coerce a wire number with a safe default. */
 function numberOf(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-/** Required services: the wire client and the slot registry. */
-export const inject = ['connection', 'slots']
+/** Required services: the wire client, the slot registry, and the jobs rosters. */
+export const inject = ['connection', 'slots', 'jobs']
 
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionLike | undefined
+  const jobs = ctx.get('jobs') as JobsLike | undefined
 
   const stopAll = (sessionId: string): Promise<StopAllOutcome> => {
     if (connection === undefined) {
@@ -68,9 +81,14 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.session.header.actions',
       id: 'halt-stop-all',
       order: 100,
-      // Inject share: the wire call joins the slot's standard props (sessionId,
-      // useSessions) without the component reaching for any context.
-      inject: () => ({ stopAll }),
+      // Inject share: the jobs store rides the renderer's `hooks` bag (every
+      // `hooks.<name>` becomes a `use<Name>` selector prop), and the roster
+      // opener + wire call join the spread props.
+      inject: () => ({
+        hooks: { jobs: jobs?.state },
+        watchRows: (sessionId: string) => jobs?.watchRows(sessionId),
+        stopAll,
+      }),
     },
     HaltJobsPill,
   ))
