@@ -605,7 +605,10 @@ export function apply(ctx, input = {}) {
             agentScopes.set(agent, { root, domain: domainName, layer, fingerprint });
             const message = createUserMessage({
                 content: [{ type: 'text', text: built.text }],
-                source: { kind: 'plugin', plugin: 'scope-router', form: 'instructions' },
+                // v4 refuses the released `{ kind: 'plugin', … }` wrapper; the
+                // canonical kind for a producer outside the shipped registry is
+                // `plugin:<name>` — what the v3→v4 migration rewrites it into.
+                source: { kind: 'plugin:scope-router', form: 'instructions' },
             });
             stats.injections += 1;
             stats.lastDetection = {

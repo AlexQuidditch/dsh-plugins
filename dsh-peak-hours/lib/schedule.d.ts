@@ -69,3 +69,29 @@ export declare function resolveSchedule(provider: string, schedules: PeakSchedul
  * covers every variant route of the provider.
  */
 export declare function decidePeak(provider: string, now: Date, schedules: PeakSchedules): PeakDecision;
+/** Whether ONE window covers `now`. A malformed window covers nothing. */
+export declare function windowContains(window: PeakWindow, now: Date): boolean;
+/**
+ * Seconds until the next boundary (any window's start or end) after `now`.
+ *
+ * Computed on the window's own wall clock, so a timezone offset never has to be
+ * turned into an instant; a DST shift inside the countdown is ignored, which is
+ * what an indicator wants (the authoritative decision stays {@link decidePeak}).
+ * The scan crosses a weekend, and an all-broken set falls back to one day.
+ */
+export declare function secondsToNextBoundary(windows: PeakWindow[], now: Date): number;
+/** The header-indicator view: which windows are open now and when that flips. */
+export interface PeakOverview {
+    /** Whether ANY configured window is open right now. */
+    peak: boolean;
+    /** `<HH:MM> <tz>` of the first open window's end, when peaking. */
+    until?: string;
+    /** Seconds until the peak status next flips. */
+    secondsToChange: number;
+}
+/**
+ * The header-indicator view: is ANY configured window open right now, and when
+ * does that status next flip. One schedule drives both the pill and the gate,
+ * so they can never disagree about what "peak" means.
+ */
+export declare function peakOverview(now: Date, schedules: PeakSchedules): PeakOverview;

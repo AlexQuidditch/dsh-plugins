@@ -31,8 +31,24 @@ function assert(condition, message) {
   if (!condition) throw new Error('FAIL: ' + message)
 }
 
+/**
+ * Messages entering the step.
+ *
+ * Every returned message must carry a session-log v4 admissible source: a
+ * nonempty `kind` that is NOT the released `'plugin'` wrapper. v4 refuses that
+ * wrapper at persistence time ("format v4 message requires a producer-owned
+ * source kind"), which kills the whole turn the moment scope-router injects —
+ * so this runs on every gating case, injected or not.
+ */
 function decisionMessages(decision) {
-  return decision.kind === 'enter' ? decision.messages : []
+  const messages = decision.kind === 'enter' ? decision.messages : []
+  for (const message of messages) {
+    const kind = message.source?.kind
+    if (typeof kind !== 'string' || kind.length === 0 || kind === 'plugin') {
+      throw new Error(`FAIL: injected message source kind ${JSON.stringify(kind)} is not v4-admissible`)
+    }
+  }
+  return messages
 }
 
 function messageText(message) {

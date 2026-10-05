@@ -1,0 +1,42 @@
+{
+  "name": "dsh-peak-hours",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH plugin bundle: one DeepSeek peak-hours surface — a header indicator with an \"allow work in peak hours\" switch, and the host gate that warns (soft) or blocks (hard) model calls in peak windows.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/schedule.js",
+    "lib/schedule.d.ts",
+    "cordis.patch.yml"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "license": "MIT"
+}

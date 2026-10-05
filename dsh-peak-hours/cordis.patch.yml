@@ -1,0 +1,28 @@
+# dsh-peak-hours bundle patch. Applied as a bundle layer (dsh.bundle.patch),
+# after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
+#
+# ONE row drives both surfaces, so the header pill and the gate can never
+# disagree about what "peak" means: the pill renders this schedule, and the
+# `llm/stream` gate enforces it.
+#
+# A patch replaces a row's whole config, so every key is restated here.
+#
+# DeepSeek peak pricing per the pricing page: 01:00-04:00 and 06:00-10:00 UTC,
+# Monday-Friday (0=Sunday..6=Saturday). Drop `days` to gate every calendar day.
+#
+# `mode: soft` warns in the host log; `hard` rejects the call with
+# PEAK_HOURS_BLOCK. Either way the user can suspend the gate from the header
+# indicator ("Разрешить работу в peak hours"), and that choice persists under
+# the DSH home.
+- insert:
+  - id: peak-hours
+    name: "dsh-peak-hours"
+    config:
+      enabled: true
+      mode: soft
+      schedules:
+        # Family key: covers `deepseek`, `deepseek-official`, `deepseek-vision`.
+        deepseek:
+          windows:
+            - { start: "01:00", end: "04:00", tz: "UTC", days: [1, 2, 3, 4, 5] }
+            - { start: "06:00", end: "10:00", tz: "UTC", days: [1, 2, 3, 4, 5] }

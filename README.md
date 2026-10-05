@@ -6,12 +6,11 @@
 
 | Пакет | Что делает |
 | --- | --- |
-| `dsh-peak-indicator` | Индикатор в шапке сессии: пиковые часы DeepSeek API (01:00–04:00 и 06:00–10:00 UTC, пн–пт). Красное свечение в пик, обратный отсчёт до конца/начала пика; в подсказке — окно пика с пересчётом в местное время. |
+| `dsh-peak-hours` | Одна поверхность пиковых часов DeepSeek: индикатор в шапке сессии с поповером и переключателем «Разрешить работу в peak hours» + хост-гейт вызовов модели (`soft` — warn, `hard` — `PEAK_HOURS_BLOCK`). Расписание одно на оба: его рендерит пилюля и по нему решает `llm/stream`. Переключатель сохраняется в `$DSH_HOME/peak-hours.json`. Пришёл на смену `dsh-peak-indicator` + `dsh-vv-peak-hours`. |
 | `hello-world` | Пример-песочница: `/hello` (host) + кнопка 👋 в строке действий сообщения. |
 | `scope-router` | Автоподстановка файлов инструкций проекта по обнаруженной области (проект / домен / слой). |
 | `dsh-vv-guardian` | Guardian-lite из vv-opencode: авто-одобрение рутинных низкорисковых песочниц-эскалаций (`workspace-write`); рискованное (`danger-full-access`) остаётся в ручном approval-флоу. |
 | `dsh-vv-context` | `/context`-инспектор vv-opencode: кнопка в шапке сессии → панель с честной статистикой контекстного окна (токены по корзинам, давление на окно, разбивка состава). |
-| `dsh-vv-peak-hours` | PeakHoursPlugin vv-opencode: хост-гейт вызовов модели в пиковые часы провайдера — режимы `soft` (warn в лог) и `hard` (блок ошибкой `PEAK_HOURS_BLOCK`). |
 | `dsh-vv-spec-guard` | SpecGuardPlugin vv-opencode: детерминированный линтер `.vvoc` spec/plan XML (идентичности, зависимости, статусы) + вердикты при чтении файлов. |
 | `dsh-managed-sessions` | Модельные инструменты для создания и ведения настоящих managed-сессий в workspace (`session_spawn` / `session_send` / `session_status` / `session_cancel`): самостоятельные root-сессии в сайдбаре с собственным жизненным циклом, а не субагенты. Рядом едет скилл `managed-sessions` — политика выбора между `subagent` и managed-сессией. |
 
@@ -51,12 +50,11 @@ git clone https://github.com/AlexQuidditch/dsh-plugins.git
 cd dsh-plugins
 
 # бандлы (все или выборочно):
-dsh plugin --profile web add dsh-peak-indicator
+dsh plugin --profile web add dsh-peak-hours
 dsh plugin --profile web add hello-world
 dsh plugin --profile web add scope-router
 dsh plugin --profile web add dsh-vv-guardian
 dsh plugin --profile web add dsh-vv-context
-dsh plugin --profile web add dsh-vv-peak-hours
 dsh plugin --profile web add dsh-vv-spec-guard
 dsh plugin --profile web add dsh-managed-sessions
 dsh plugin --profile web add agent-presets     # пресеты vv-controller + standard-browser
@@ -76,10 +74,9 @@ dsh web --host 127.0.0.1 --port 3080 --no-open   # перезапуск, что�
 
 ## Пересборка (необязательно)
 
-`lib/` закоммичены, поэтому на обычной установке сборка не нужна. Для пересборки клиентских бандлов (`dsh-peak-indicator`, `hello-world`) нужен чекаут исходников DSH, лежащий сестринской папкой (пресет `packages/client/tsdown.client.ts` импортируется по относительному пути `../../deepseek-harness/...`):
+`lib/` закоммичены, поэтому на обычной установке сборка не нужна. Для пересборки клиентских бандлов (`hello-world`, `dsh-halt-jobs`) нужен чекаут исходников DSH, лежащий сестринской папкой (пресет `packages/client/tsdown.client.ts` импортируется по относительному пути `../../deepseek-harness/...`):
 
 ```bash
-cd dsh-peak-indicator && pnpm install && pnpm run build
-cd ../hello-world        && pnpm install && pnpm run build
-cd ../scope-router       && pnpm install && pnpm run build
+cd hello-world        && pnpm install && pnpm run build
+cd ../scope-router    && pnpm install && pnpm run build
 ```

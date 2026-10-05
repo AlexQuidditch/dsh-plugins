@@ -723,7 +723,13 @@ export function apply(ctx: Context, input: ScopeRouterConfig = {}): void {
 
       const message = createUserMessage({
         content: [{ type: 'text', text: built.text }],
-        source: { kind: 'plugin', plugin: 'scope-router', form: 'instructions' },
+        // Session format v4 requires a PRODUCER-OWNED source kind and refuses
+        // the released v3 `{ kind: 'plugin', plugin: … }` wrapper outright
+        // ("format v4 message requires a producer-owned source kind"). The
+        // canonical kind for a producer outside the shipped registry is
+        // `plugin:<name>` — exactly what the v3→v4 migration rewrites this
+        // wrapper into, so old rows and new messages agree.
+        source: { kind: 'plugin:scope-router', form: 'instructions' },
       })
       stats.injections += 1
       stats.lastDetection = {

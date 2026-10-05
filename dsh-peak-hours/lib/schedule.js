@@ -114,3 +114,75 @@ export function decidePeak(provider, now, schedules) {
     }
     return { inPeak: false, broken };
 }
+/** Whether ONE window covers `now`. A malformed window covers nothing. */
+export function windowContains(window, now) {
+    let resolved;
+    try {
+        resolved = resolveWindow(window);
+    }
+    catch {
+        return false;
+    }
+    const tz = window.tz ?? 'UTC';
+    const clock = wallClockParts(now, tz);
+    const minuteOfDay = clock.hour * 60 + clock.minute;
+    const sameDay = minuteOfDay >= resolved.startAbs && minuteOfDay < resolved.endAbs;
+    const afterMidnight = minuteOfDay < resolved.endAbs - DAY_MINUTES && resolved.endAbs > DAY_MINUTES;
+    if (!sameDay && !afterMidnight)
+        return false;
+    return resolved.days === null || resolved.days.has(clock.weekday);
+}
+/**
+ * Seconds until the next boundary (any window's start or end) after `now`.
+ *
+ * Computed on the window's own wall clock, so a timezone offset never has to be
+ * turned into an instant; a DST shift inside the countdown is ignored, which is
+ * what an indicator wants (the authoritative decision stays {@link decidePeak}).
+ * The scan crosses a weekend, and an all-broken set falls back to one day.
+ */
+export function secondsToNextBoundary(windows, now) {
+    let best = Number.POSITIVE_INFINITY;
+    for (const window of windows) {
+        let resolved;
+        try {
+            resolved = resolveWindow(window);
+        }
+        catch {
+            continue;
+        }
+        const clock = wallClockParts(now, window.tz ?? 'UTC');
+        // Local minute-of-day; the seconds component is timezone-independent.
+        const localSeconds = (clock.hour * 60 + clock.minute) * 60 + now.getUTCSeconds();
+        for (const boundary of [resolved.startAbs, resolved.endAbs]) {
+            for (let d = 0; d <= 9; d += 1) {
+                const delta = (d * DAY_MINUTES + boundary) * 60 - localSeconds;
+                if (delta > 0 && delta < best)
+                    best = delta;
+            }
+        }
+    }
+    return Number.isFinite(best) ? best : DAY_MINUTES * 60;
+}
+/**
+ * The header-indicator view: is ANY configured window open right now, and when
+ * does that status next flip. One schedule drives both the pill and the gate,
+ * so they can never disagree about what "peak" means.
+ */
+export function peakOverview(now, schedules) {
+    const windows = [];
+    for (const key of Object.keys(schedules)) {
+        for (const window of schedules[key].windows ?? [])
+            windows.push(window);
+    }
+    let peak = false;
+    let until;
+    for (const window of windows) {
+        if (!windowContains(window, now))
+            continue;
+        peak = true;
+        if (until === undefined)
+            until = `${window.end} ${window.tz ?? 'UTC'}`;
+    }
+    return { peak, until, secondsToChange: secondsToNextBoundary(windows, now) };
+}
+
