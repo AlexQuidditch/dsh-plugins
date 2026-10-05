@@ -56,6 +56,38 @@ check('overview: weekday windows ignored on Sunday', peakOverview(sun0700, WEEKD
 check('windowContains: broken window covers nothing', windowContains({ start: '25:99', end: '04:00' }, wed0700) === false)
 check('resolveSchedule: exact beats family', resolveSchedule('deepseek-vision', { deepseek: { windows: ALL_DAY }, 'deepseek-vision': { windows: ALL_DAY } })?.key === 'deepseek-vision')
 
+// ── GLM Coding Plan (провайдер zai) ─────────────────────────────────────────
+//
+// Первоисточник: docs.bigmodel.cn/cn/coding-plan/overview →
+// «非高峰时段内，模型调用按基础积分消耗的 50% 抵扣。高峰时段：每周一至周五的
+// 14:00～18:00（UTC+8）». То есть高峰 — пн–пт 14:00–18:00 по Пекину
+// (= 06:00–10:00 UTC), а выходные целиком идут по не高峰.
+const GLM = { zai: { windows: [{ start: '14:00', end: '18:00', tz: 'Asia/Shanghai', days: [1, 2, 3, 4, 5] }] } }
+// 2026-10-05 — понедельник, 2026-10-10 — суббота.
+const glmCases = [
+  ['2026-10-05T05:30:00Z', false, '13:30 по Пекину — до окна'],
+  ['2026-10-05T06:00:00Z', true, '14:00 по Пекину — начало включительно'],
+  ['2026-10-05T09:59:00Z', true, '17:59 по Пекину'],
+  ['2026-10-05T10:00:00Z', false, '18:00 по Пекину — конец исключительно'],
+  ['2026-10-10T07:00:00Z', false, 'суббота 15:00 по Пекину'],
+]
+for (const [iso, expected, note] of glmCases) {
+  for (const provider of ['zai', 'zai-coding']) {
+    const got = decidePeak(provider, new Date(iso), GLM).inPeak
+    check(`GLM ${note} [${provider}]`, got === expected, `inPeak=${got}`)
+  }
+}
+check('GLM: чужой провайдер не задет', decidePeak('deepseek-official', new Date('2026-10-05T06:30:00Z'), GLM).inPeak === false)
+
+// Тесты выше проверяют движок; эти — что расписание вообще доехало до патча.
+const patch = readFileSync(new URL('./cordis.patch.yml', import.meta.url), 'utf8')
+check('конфиг: семейство zai объявлено', /^\s+zai:\s*$/m.test(patch))
+check(
+  'конфиг: окно GLM 14:00-18:00 Asia/Shanghai, пн-пт',
+  patch.includes('{ start: "14:00", end: "18:00", tz: "Asia/Shanghai", days: [1, 2, 3, 4, 5] }'),
+)
+check('конфиг: окна DeepSeek не потеряны', patch.includes('{ start: "01:00", end: "04:00", tz: "UTC", days: [1, 2, 3, 4, 5] }'))
+
 // ── гейт ────────────────────────────────────────────────────────────────────
 async function* fakeStream() { yield { type: 'text' } }
 const mkOptions = (provider) => ({ provider })

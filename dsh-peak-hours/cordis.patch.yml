@@ -10,6 +10,16 @@
 # DeepSeek peak pricing per the pricing page: 01:00-04:00 and 06:00-10:00 UTC,
 # Monday-Friday (0=Sunday..6=Saturday). Drop `days` to gate every calendar day.
 #
+# GLM Coding Plan (Z.ai / 智谱) peaks Mon-Fri 14:00-18:00 Beijing time (UTC+8),
+# i.e. 06:00-10:00 UTC; off-peak calls are billed at 50% of the base credits
+# (docs.bigmodel.cn/cn/coding-plan/overview → 积分抵扣计算方式). The window is
+# declared in the plan's own timezone so the weekday is evaluated there, and
+# the family key matches the `zai` provider registered by llm-pi-ai.
+#
+# NOTE: the plan's 庆双节 campaign (2026-09-25 … 2026-10-07) bills EVERY hour at
+# the off-peak rate, so until it ends the GLM entry matches nothing — that is
+# the campaign, not a broken schedule.
+#
 # `mode: soft` warns in the host log; `hard` rejects the call with
 # PEAK_HOURS_BLOCK. Either way the user can suspend the gate from the header
 # indicator ("Разрешить работу в peak hours"), and that choice persists under
@@ -26,3 +36,8 @@
           windows:
             - { start: "01:00", end: "04:00", tz: "UTC", days: [1, 2, 3, 4, 5] }
             - { start: "06:00", end: "10:00", tz: "UTC", days: [1, 2, 3, 4, 5] }
+        # Family key: the GLM routes behind the `zai` provider (glm-5.3,
+        # glm-5.3-flash, and any `zai-*` variant added later).
+        zai:
+          windows:
+            - { start: "14:00", end: "18:00", tz: "Asia/Shanghai", days: [1, 2, 3, 4, 5] }
