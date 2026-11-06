@@ -17,7 +17,7 @@ export function HelloAction({ runHello }: HelloActionProps) {
         console.error('[dsh-hello-world] runHello failed:', error)
       })}
     >
-      Foo
+      👋
     </button>
   )
 }

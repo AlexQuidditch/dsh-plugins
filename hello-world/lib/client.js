@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
 				onClick: () => void runHello().catch((error) => {
 					console.error("[dsh-hello-world] runHello failed:", error);
 				}),
-				children: "Foo"
+				children: "👋"
 			});
 		}
 		//#endregion
