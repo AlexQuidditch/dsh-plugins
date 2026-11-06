@@ -283,12 +283,29 @@ export function apply(ctx, input = {}) {
     }
   }
 
-  /** cwd of an existing session, or undefined when it cannot be read. */
-  async function cwdOf(sc, sessionId, signal) {
+  /**
+   * cwd of an existing session, or undefined when it cannot be read.
+   *
+   * 0.2.2 removed `sessionController.inspect`; the durable header now comes
+   * from `sessionPersistence.stat`, with the live sessions store as a
+   * fallback for sessions this process already holds.
+   */
+  async function cwdOf(_sc, sessionId) {
     try {
-      const info = await sc.inspect(sessionId, signal)
-      const meta = info ? info.meta : undefined
-      return meta && typeof meta.cwd === 'string' ? meta.cwd : undefined
+      const persistence = ctx.get('sessionPersistence')
+      if (persistence !== undefined && typeof persistence.stat === 'function') {
+        const snapshot = await persistence.stat(sessionId)
+        const cwd = snapshot && snapshot.header && typeof snapshot.header.cwd === 'string' ? snapshot.header.cwd : undefined
+        if (cwd !== undefined) return cwd
+      }
+    } catch {
+      /* fall through to the live store */
+    }
+    try {
+      const sessions = ctx.get('sessions')
+      const session = sessions === undefined ? undefined : sessions.get(sessionId)
+      const header = session && session.header
+      return header && typeof header.cwd === 'string' ? header.cwd : undefined
     } catch {
       return undefined
     }
@@ -612,13 +629,10 @@ export function apply(ctx, input = {}) {
         return { ok: true, text: lines.length > 0 ? lines.join('\n') : '(сессий нет)' }
       }
 
-      let info
-      try {
-        info = await sc.inspect(requested, exec.signal)
-      } catch (error) {
-        return { ok: false, error: `inspect: ${describe(error)}` }
-      }
-      const events = info && Array.isArray(info.events) ? info.events : []
+      // 0.2.2: `sessionController.inspect` is gone. The summary (running /
+      // cwd) comes from the list read, the durable tail from the paged
+      // `events` read (`page` is its deprecated alias), and the logical event
+      // count from the persistence snapshot when the backend reports one.
       let summary
       try {
         const listed = await sc.list({}, exec.signal)
@@ -632,6 +646,35 @@ export function apply(ctx, input = {}) {
       } catch {
         summary = undefined
       }
+
+      const readEvents = typeof sc.events === 'function'
+        ? sc.events.bind(sc)
+        : (typeof sc.page === 'function' ? sc.page.bind(sc) : undefined)
+      if (readEvents === undefined) {
+        return { ok: false, error: 'сервис sessionController не отдаёт журнал (нет метода events/page)' }
+      }
+      let page
+      try {
+        page = await readEvents(
+          { address: { kind: 'session', sessionId: requested }, maxMessages: wanted },
+          exec.signal,
+        )
+      } catch (error) {
+        return { ok: false, error: `events: ${describe(error)}` }
+      }
+      const records = page && Array.isArray(page.records) ? page.records : []
+
+      let eventCount
+      try {
+        const persistence = ctx.get('sessionPersistence')
+        if (persistence !== undefined && typeof persistence.stat === 'function') {
+          const snapshot = await persistence.stat(requested)
+          if (snapshot !== undefined && typeof snapshot.eventCount === 'number') eventCount = snapshot.eventCount
+        }
+      } catch {
+        eventCount = undefined
+      }
+
       let live = false
       try {
         const agents = ctx.get('agents')
@@ -642,8 +685,9 @@ export function apply(ctx, input = {}) {
 
       const collected = []
       let turnEnd
-      for (let index = events.length - 1; index >= 0; index -= 1) {
-        const event = events[index]
+      for (let index = records.length - 1; index >= 0; index -= 1) {
+        const record = records[index]
+        const event = record && record.type === 'event' && record.event && typeof record.event === 'object' ? record.event : record
         if (!event || typeof event.type !== 'string') continue
         if (event.type === 'assistant/message' && collected.length < wanted) {
           const text = textOfMessage(event.data ? event.data.message : undefined)
@@ -655,14 +699,15 @@ export function apply(ctx, input = {}) {
         }
         if (collected.length >= wanted && turnEnd !== undefined) break
       }
-      const meta = info && info.meta ? info.meta : undefined
+      let cwd = summary && typeof summary.cwd === 'string' ? summary.cwd : undefined
+      if (cwd === undefined) cwd = await cwdOf(sc, requested, exec.signal)
       const head = [
         `session: ${requested}`,
         `live agent: ${live ? 'yes' : 'no'}`,
         `running: ${summary && summary.running === true ? 'yes' : 'no'}`,
-        `events: ${String(events.length)}`,
+        `events: ${eventCount === undefined ? `≥${String(records.length)} (последняя страница)` : String(eventCount)}`,
         `last turn end: ${turnEnd === undefined ? '?' : turnEnd}`,
-        `cwd: ${meta && typeof meta.cwd === 'string' ? meta.cwd : '?'}`,
+        `cwd: ${cwd === undefined ? '?' : cwd}`,
       ]
       const body = []
       for (let index = collected.length - 1; index >= 0; index -= 1) {

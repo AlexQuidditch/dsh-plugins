@@ -90,10 +90,13 @@ class StubSessionController extends Service {
     }
     return { items }
   }
-  async inspect(sessionId) {
-    const session = this.live.get(sessionId)
+  async events(request, signal) {
+    this.calls.push({ method: 'events', request })
+    if (signal !== undefined && typeof signal.throwIfAborted === 'function') signal.throwIfAborted()
+    const sessionId = request && request.address && request.address.kind === 'session' ? request.address.sessionId : undefined
+    const session = sessionId === undefined ? undefined : this.live.get(sessionId)
     if (session === undefined) throw new Error(`session "${sessionId}" not found`)
-    return { meta: { cwd: session.header.cwd }, inheritedEventCount: 0, events: session.events }
+    return { records: session.events.map((event) => ({ type: 'event', event })), hasMore: false, cursor: session.events.length }
   }
   async cancel(request) {
     this.calls.push({ method: 'cancel', request })
@@ -110,6 +113,19 @@ class StubSessionController extends Service {
       ],
       failures: [],
     }
+  }
+}
+
+/** 0.2.2: durable header/count reader replacing the removed controller.inspect. */
+class StubSessionPersistence extends Service {
+  constructor(ctx, live) {
+    super(ctx, 'sessionPersistence')
+    this.live = live
+  }
+  async stat(id) {
+    const session = this.live.get(id)
+    if (session === undefined) return undefined
+    return { header: { cwd: session.header.cwd }, eventCount: session.events.length }
   }
 }
 
@@ -214,6 +230,7 @@ async function makeRoot(live, config, options = {}) {
   if (options.withSkills !== false) await root.plugin(StubSkills)
   await root.plugin(StubSessionController, live)
   await root.plugin(StubSessions, live)
+  await root.plugin(StubSessionPersistence, live)
   await root.plugin(StubAgents, new Map())
   await root.plugin(StubWorkspaceRegistry, workspaces)
   await root.plugin(StubSandboxPolicy)
@@ -399,7 +416,7 @@ const detail = await status.execute({ sessionId: created.sessionId }, exec)
 check('status по sessionId: live/turn/events', detail.ok === true && detail.text.includes('last turn end: completed') && detail.text.includes('events: 3'), String(detail.text))
 check('status по sessionId: текст ответа ассистента', detail.text.includes('готово: X'), String(detail.text))
 const missing = await status.execute({ sessionId: 'session-nope' }, exec)
-check('status по несуществующей сессии возвращает ошибку', missing.ok === false && String(missing.error).includes('inspect'), JSON.stringify(missing))
+check('status по несуществующей сессии возвращает ошибку', missing.ok === false && String(missing.error).includes('events'), JSON.stringify(missing))
 
 // ── 5. session_send и session_cancel ────────────────────────────────────────
 
