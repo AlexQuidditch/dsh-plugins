@@ -15,7 +15,7 @@
 ## Тест
 
 ```bash
-pnpm install --store-dir ../.pnpm-store --offline
+pnpm install --store-dir ../.pnpm-store   # общий кэш репозитория; первый раз скачает devDeps из npm
 pnpm run build
 node activation.test.mjs   # юниты форматтеров + активация host-половины
 ```

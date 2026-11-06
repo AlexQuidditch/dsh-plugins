@@ -11,7 +11,7 @@
 ## Установка
 
 ```bash
-dsh plugin --profile web add dsh-vv-guardian   # + перезапуск dsh web
+dsh plugin --profile web add ~/projects/dsh-plugins/dsh-vv-guardian   # + перезапуск dsh web
 ```
 
 ## Конфиг
@@ -29,7 +29,7 @@ dsh plugin --profile web add dsh-vv-guardian   # + перезапуск dsh web
 ## Тест
 
 ```bash
-pnpm install --store-dir ../.pnpm-store --offline
+pnpm install --store-dir ../.pnpm-store   # общий кэш репозитория; первый раз скачает devDeps из npm
 pnpm run build
 node activation.test.mjs
 ```

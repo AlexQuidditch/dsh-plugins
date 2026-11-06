@@ -34,7 +34,7 @@ pnpm install && pnpm build   # lib/index.js + lib/client.js + типы
 Подключение в профиль:
 
 ```sh
-dsh plugin --profile web add /Users/alex_quidditch/projects/dsh-plugins/dsh-halt-jobs
+dsh plugin --profile web add ~/projects/dsh-plugins/dsh-halt-jobs
 ```
 
 и перезапуск профиля.

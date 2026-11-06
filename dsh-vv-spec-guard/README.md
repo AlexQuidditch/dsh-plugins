@@ -11,15 +11,15 @@
 ## Установка
 
 ```bash
-dsh plugin --profile web add dsh-vv-spec-guard   # + перезапуск dsh web
+dsh plugin --profile web add ~/projects/dsh-plugins/dsh-vv-spec-guard   # + перезапуск dsh web
 ```
 
 ## Тест
 
 ```bash
-pnpm install --store-dir ../.pnpm-store --offline
+pnpm install --store-dir ../.pnpm-store   # общий кэш репозитория; первый раз скачает devDeps из npm
 pnpm run build
 node activation.test.mjs   # 20+ юнит-кейсов линтера + активация и пробный тул
 ```
 
-Тот же движок переиспользует CLI `vvoc lint` (пакет `vvoc`).
+Движок доступен только через тул `spec_guard_lint`: отдельного CLI в комплекте нет (пакет `vvoc` с `vvoc lint` удалён из репозитория — линтер встроен в плагин).
