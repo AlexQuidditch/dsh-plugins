@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="vv panel">
+  <path d="M10 17l9 9-9 9" stroke="#4aa3ff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M27 17l9 9-9 9" stroke="#4aa3ff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.68"/>
+  <path d="M44 17l9 9-9 9" stroke="#4aa3ff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <circle cx="51" cy="46" r="6.5" fill="#2fbf71"/>
+</svg>

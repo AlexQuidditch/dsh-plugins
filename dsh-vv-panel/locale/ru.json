@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Панель vv для композера",
+    "description": "Кнопки под полем ввода, автозапускающие шесть скиллов vv-* (spec, plan, execute, review, reflect, handoff) в сессиях vv-controller."
+  }
+}

@@ -1,0 +1,9 @@
+# dsh-vv-panel bundle patch: one web-client row (the host half is a no-op).
+#
+# The browser half registers the vv control panel into the additive
+# `conversation.composer.dock` slot. It renders only when the current
+# session's `agentPreset` projection equals the target preset, so the row
+# stays invisible in every other session.
+- insert:
+  - id: vv-panel
+    name: 'dsh-vv-panel'
