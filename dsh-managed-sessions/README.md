@@ -93,7 +93,7 @@ session.append('model/selection', { provider, model, reasoningEffort? })
 ## Установка
 
 ```bash
-dsh plugin --profile web add dsh-managed-sessions
+dsh plugin --profile web add ~/projects/dsh-plugins/dsh-managed-sessions
 # затем один перезапуск dsh web — строки композиции читаются при старте профиля
 ```
 
@@ -102,7 +102,9 @@ dsh plugin --profile web add dsh-managed-sessions
 ## Тест
 
 ```bash
-cd dsh-managed-sessions && node activation.test.mjs
+cd dsh-managed-sessions
+pnpm install --store-dir ../.pnpm-store   # devDep: @deepseek-ai/cordis (первый раз скачает из npm)
+node activation.test.mjs
 ```
 
 Изолированный тест активации (38 проверок): монтирует host-половину на стабах сервисов (`tools`, `skills`, `sessionController`, `sessions`, `agents`, `workspaceRegistry`, `sandboxPolicy`) и проверяет регистрацию четырёх тулов и скилла политики (имя и описание из frontmatter, срезанный frontmatter, непустое тело), деградацию без реестра скиллов, `registerSkill: false`, create+prompt, фенс `allowedRoots`, разбор tail в `session_status`, наследование sandbox-режима, `cancel` и чистый `dispose` (включая снятие скилла). Живой DSH не трогает. Нужен резолвящийся `@deepseek-ai/cordis` (в репозитории `node_modules/` в `.gitignore`).
