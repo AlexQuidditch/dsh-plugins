@@ -1,20 +1,27 @@
 /**
- * Проводка жизненного цикла агента в шов `agent/request`.
+ * Проводка жизненного цикла агента в шов `agent.model.select()` (0.2.2).
  *
- * Регрессия, которую эти кейсы держат: 0.2 переименовал `agent/session-start`
- * в `agent/created`. Пока плагин слушал только старое имя, `sessionSource`
- * оставался `null`, и правило первого запроса всегда уходило в passthrough
- * «not-fresh-session» — маршрут `model.default` мастер-сессий не применялся
- * никогда, хотя юнит-тесты `decide` были зелёными.
+ * Регрессии, которые эти кейсы держат:
+ *
+ * 1. 0.2 переименовал `agent/session-start` в `agent/created`. Пока плагин
+ *    слушал только старое имя, `sessionSource` оставался `null`, и правило
+ *    первого запроса всегда уходило в passthrough «not-fresh-session» —
+ *    маршрут `model.default` мастер-сессий не применялся никогда.
+ * 2. 0.2.2 зафиксировал provider/model шага до водопада `agent/request`:
+ *    слушатель, переписывавший там маршрут, ронял ход с «agent/request
+ *    proposed … after step preparation fixed …». Плагин теперь записывает
+ *    маршрут через `agent.model.select()` на `agent/created`, а деградацию —
+ *    на `agent/request-error` c делегированием сбоя.
  */
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { Context } from '@deepseek-ai/cordis'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import * as plugin from '../src/index.ts'
+import type { RouteSelection } from '../src/decide.ts'
 
 const POLICY = `
 model:
@@ -25,9 +32,11 @@ model:
   workers:
     provider: deepseek-official
     model: deepseek-flash
+    reasoningEffort: max
+  fallback:
+    - provider: deepseek-official
+      model: deepseek-flash
 `
-
-const BASE = { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' }
 
 let workspace: string
 
@@ -41,14 +50,22 @@ afterAll(async () => {
   await rm(workspace, { recursive: true, force: true })
 })
 
-/** The slice of one Agent the policy seams read. */
+/** The slice of one Agent the policy seams read (0.2.2 model-selection seam). */
 function fakeAgent(id = 'session-1', header: Record<string, unknown> = {}) {
+  const selections: RouteSelection[] = []
   return {
     id,
     session: {
       header: { id, cwd: workspace, isSeeded: false, ...header },
       requestHeader: () => undefined,
     },
+    model: {
+      current: () => selections.at(-1),
+      select: (selection: RouteSelection) => {
+        selections.push(selection)
+      },
+    },
+    selections,
   }
 }
 
@@ -73,30 +90,25 @@ function dispatcher(ctx: Context): RawDispatcher {
   return ctx as unknown as RawDispatcher
 }
 
-/** Drive one first request through the request seam for the given agent. */
-async function firstRequest(ctx: Context, agent: ReturnType<typeof fakeAgent>) {
-  return dispatcher(ctx).waterfall(
-    {},
-    'agent/request',
-    { agent, turn: 1, step: 1, signal: new AbortController().signal },
-    () => Promise.resolve({ ...BASE }),
-  )
-}
-
-describe('agent lifecycle → first-request route', () => {
-  it('applies the master route for a fresh session announced as `agent/created`', async () => {
+describe('agent lifecycle → model.select at creation', () => {
+  it('selects the master route for a fresh session announced as `agent/created`', async () => {
     const ctx = await mount()
     const agent = fakeAgent()
     dispatcher(ctx).emit({}, 'agent/created', { agent, source: 'startup' })
-    expect(await firstRequest(ctx, agent)).toEqual({ provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' })
+    await vi.waitFor(() => expect(agent.selections).toHaveLength(1))
+    expect(agent.selections[0]).toEqual({ provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' })
     await ctx.fiber.dispose()
   })
 
-  it('still applies the master route when only the legacy `agent/session-start` arrives', async () => {
+  it('still selects the master route when only the legacy `agent/session-start` source arrives', async () => {
     const ctx = await mount()
     const agent = fakeAgent()
+    // The legacy spelling only records the source; the selection itself needs
+    // the 0.2 `agent/created` event, so drive the pair as 0.1→0.2 migration did.
     dispatcher(ctx).emit({}, 'agent/session-start', { agent, source: 'startup' })
-    expect(await firstRequest(ctx, agent)).toEqual({ provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' })
+    dispatcher(ctx).emit({}, 'agent/created', { agent })
+    await vi.waitFor(() => expect(agent.selections).toHaveLength(1))
+    expect(agent.selections[0]).toEqual({ provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' })
     await ctx.fiber.dispose()
   })
 
@@ -104,15 +116,69 @@ describe('agent lifecycle → first-request route', () => {
     const ctx = await mount()
     const agent = fakeAgent()
     dispatcher(ctx).emit({}, 'agent/created', { agent, source: 'resume' })
-    expect(await firstRequest(ctx, agent)).toEqual(BASE)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(agent.selections).toEqual([])
     await ctx.fiber.dispose()
   })
 
   it('routes a delegated child to the workers route without any lifecycle source', async () => {
     const ctx = await mount()
     const agent = fakeAgent('child-1', { delegationDepth: 1 })
+    dispatcher(ctx).emit({}, 'agent/created', { agent, source: 'resume' })
+    await vi.waitFor(() => expect(agent.selections).toHaveLength(1))
+    expect(agent.selections[0]).toEqual({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' })
+    await ctx.fiber.dispose()
+  })
+})
+
+describe('agent/request-error → degrade through model.select', () => {
+  it('records the fallback route and delegates the failure', async () => {
+    const ctx = await mount()
+    const agent = fakeAgent()
     dispatcher(ctx).emit({}, 'agent/created', { agent, source: 'startup' })
-    expect(await firstRequest(ctx, agent)).toEqual({ provider: 'deepseek-official', model: 'deepseek-flash' })
+    await vi.waitFor(() => expect(agent.selections).toHaveLength(1))
+
+    const outcome = await dispatcher(ctx).waterfall(
+      {},
+      'agent/request-error',
+      {
+        agent,
+        turn: 2,
+        step: 1,
+        signal: new AbortController().signal,
+        provider: 'zai',
+        failure: { code: 'QUOTA', message: 'quota exhausted' },
+      },
+      () => Promise.resolve(undefined),
+    )
+    // Delegation: the waterfall result is the next listener's (here: the seed).
+    expect(outcome).toBeUndefined()
+    await vi.waitFor(() => expect(agent.selections).toHaveLength(2))
+    expect(agent.selections[1]).toEqual({ provider: 'deepseek-official', model: 'deepseek-flash' })
+    await ctx.fiber.dispose()
+  })
+
+  it('never delegates AUTH problems into a route change', async () => {
+    const ctx = await mount()
+    const agent = fakeAgent()
+    dispatcher(ctx).emit({}, 'agent/created', { agent, source: 'startup' })
+    await vi.waitFor(() => expect(agent.selections).toHaveLength(1))
+
+    await dispatcher(ctx).waterfall(
+      {},
+      'agent/request-error',
+      {
+        agent,
+        turn: 2,
+        step: 1,
+        signal: new AbortController().signal,
+        provider: 'zai',
+        failure: { code: 'AUTH', message: 'bad key' },
+      },
+      () => Promise.resolve(undefined),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(agent.selections).toHaveLength(1)
     await ctx.fiber.dispose()
   })
 })

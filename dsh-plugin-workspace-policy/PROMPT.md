@@ -6,6 +6,25 @@
 > факты с пометкой **[из контракта]** прочитаны из `.d.ts` установленного пакета и достоверны.
 > Непомеченное — решения, которые надо принять/проверить в ходе работы.
 
+> **⚠️ ПОРТ 0.2.2-rc.1 (актуальная архитектура; ниже — история).** Разделы §2.1–2.4
+> описывают допортовую архитектуру «переписать конфиг в водопаде `agent/request`».
+> В 0.2.2-rc.1 это **запрещено**: цикл агента фиксирует provider/model/effort шага в
+> `preStep` (`const selection = this.model.current()`) ДО водопада, а `prepareRequest`
+> бросает `agent/request proposed "P/M" after step preparation fixed "P2/M2"; use
+> agent.model.select() before step preparation` при любой попытке сменить там маршрут
+> (контролы — `maxTokens`, `temperature`, `stop` — менять можно). Текущая реализация:
+> маршрут выбирается `agent.model.select({provider, model, reasoningEffort?})` на
+> `agent/created` (serial-событие, слушатели await-ятся до release очереди работ
+> агента) — `pickStartupRoute`; деградация после терминального `QUOTA`/`RATE_LIMIT`
+> — `select()` цепочки fallback на `agent/request-error` c делегированием сбоя
+> (`next()`): `{kind:'retry'}` повторил бы уже зафиксированный мёртвый маршрут,
+> поэтому следующий ход сессии — первый на резервном. Слушатель
+> `system-prompt/assemble` удалён: 0.2.2 сам передаёт `modelSelection` в сборку
+> (`ctx.systemPrompt.variable('provider'|'model', ctx => ctx.modelSelection?…)`).
+> Источник истины — `@deepseek-ai/dsh-agent/lib/types/model-selection.js`
+> (`AgentModel.current/select`, projection `modelSelection`, `installModelSelection`)
+> и `@deepseek-ai/dsh-agent-loop` (`preStep`, `prepareRequest`, шаг-цикл).
+
 ---
 
 ## 0. Контекст и окружение

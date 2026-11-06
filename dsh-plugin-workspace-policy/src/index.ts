@@ -4,37 +4,58 @@
  * Gives each workspace its own LLM route policy: a `.dsh/workspace.yaml`
  * file at the workspace root defines the route for master sessions
  * (`model.default`), the route for every delegated child agent
- * (`model.workers`), and an ordered one-shot fallback chain for terminal
- * route failures. The policy is applied at the `agent/request` waterfall —
- * the one seam every conversation model request of every agent crosses — so
- * it covers subagent, fork, workflow, and ralph children without touching
- * presets, session options, or the global `agent-default-model` setting.
+ * (`model.workers`), and an ordered fallback chain for terminal route
+ * failures.
+ *
+ * 0.2.2 seam. DSH 0.2.2 fixes an agent step's provider/model/effort before
+ * the `agent/request` waterfall, which may adjust only request controls;
+ * route changes travel through `agent.model.select()` before step
+ * preparation. The policy therefore:
+ *
+ * - selects the master/workers route at `agent/created` — the awaited serial
+ *   lifecycle event that precedes every step, so the selection is durable
+ *   before the first `preStep` reads it;
+ * - degrades through `select()` at `agent/request-error` after a terminal
+ *   QUOTA / RATE_LIMIT failure, then delegates the failure: the failed
+ *   step's selection is already fixed, so the session's next turn is the
+ *   first one on the fallback route.
  *
  * Inert by default: a workspace without a policy file (or with a broken one,
  * which keeps only a warning) changes nothing. Master sessions are only
- * touched on their very first request of a fresh, route-less session with no
- * explicit user selection; anything the user switches in the composer after
- * that passes through untouched. The workspace policy for workers is
- * deliberately absolute — it overrides preset `agentOptions` pins — and is
- * documented as such in the README.
+ * touched when they start fresh, route-less, and with no explicit user
+ * selection; anything the user switches in the composer passes through
+ * untouched. The workspace policy for workers is deliberately absolute — it
+ * overrides preset `agentOptions` pins — and is documented as such in the
+ * README.
  *
  * Namespace plugin shape (named exports; no default export).
  */
 
 import z from 'schemastery'
 
-import { decideRequestError, initialAgentState, materializeRoute, NO_GUARDS, pickRoute, previewRoute } from './decide.ts'
-import type { AgentPolicyState, CallConfigShape, RequestGuards, SessionStartSourceLite } from './decide.ts'
+import {
+  decideRequestError,
+  initialAgentState,
+  NO_GUARDS,
+  pickStartupRoute,
+  resolveRouteSelection,
+} from './decide.ts'
+import type {
+  AgentPolicyState,
+  RequestGuards,
+  RouteSelection,
+  SessionStartSourceLite,
+} from './decide.ts'
 import { WorkspacePolicyStore } from './policy-store.ts'
 import type { PolicySlot } from './types.ts'
 import { isPolicyActionable } from './types.ts'
 
-// Type-only imports: they load the Cordis module augmentations (agent events,
-// the llm service surface, the prompt-assembly waterfall) without adding
-// runtime dependencies.
+// Type-only imports: they load the Cordis module augmentations (the agent
+// event map, the llm service surface) without adding runtime dependencies.
+// The Agent type itself is NOT imported: the pinned devDependency typings
+// predate the 0.2.2 `model` seam, so this glue reads agents structurally.
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-agent'
 
 export const name = 'workspace-policy'
 
@@ -96,6 +117,37 @@ interface SessionProjectionsLike {
   stateOf(session: object, key: string): { pending?: unknown } | undefined
 }
 
+/** Minimal structural view of `AgentModel` (0.2.2 model-selection seam). */
+interface AgentModelLike {
+  current(): RouteSelection | undefined
+  select(selection: RouteSelection): void
+}
+
+/**
+ * The slice of one Agent the policy seams read. 0.2.2 delivers `model` as a
+ * live object; older typings do not carry it, so the glue stays structural.
+ */
+interface AgentLike {
+  id?: string
+  session: {
+    header: {
+      id?: string
+      cwd?: string
+      delegationDepth?: number
+      origin?: string
+      parentSession?: unknown
+    }
+    requestHeader(): unknown
+  }
+  /** Present on 0.2.2 hosts; absent on 0.1, where the plugin is inert. */
+  model?: AgentModelLike
+}
+
+/** The agent's model seam, when the host provides one. */
+function modelOf(agent: AgentLike): AgentModelLike | null {
+  return agent.model ?? null
+}
+
 /** Resolved model facts used to build request guards. */
 interface ModelFacts {
   efforts: ReadonlySet<string> | null
@@ -130,7 +182,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
-  function stateFor(agent: Agent): AgentPolicyState {
+  function stateFor(agent: AgentLike): AgentPolicyState {
     let state = agentStates.get(agent)
     if (state === undefined) {
       state = initialAgentState()
@@ -140,7 +192,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
   }
 
   /** Delegated child: honest session-header lineage first, id heuristic fallback. */
-  function isWorkerAgent(agent: Agent): boolean {
+  function isWorkerAgent(agent: AgentLike): boolean {
     const header = agent.session.header
     if (typeof header.delegationDepth === 'number') return header.delegationDepth > 0
     if (header.origin === 'subagent') return true
@@ -150,7 +202,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
   }
 
   /** Durable explicit model selection not yet consumed by a request header. */
-  function hasPendingUserSelection(agent: Agent): boolean {
+  function hasPendingUserSelection(agent: AgentLike): boolean {
     if (sessionProjections === undefined) return false
     try {
       const state = sessionProjections.stateOf(agent.session, 'modelSelection')
@@ -180,7 +232,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
   }
 
   /** Policy slot for the agent's workspace, or `null` when inert. */
-  async function policySlotFor(agent: Agent): Promise<PolicySlot | null> {
+  async function policySlotFor(agent: AgentLike): Promise<PolicySlot | null> {
     const cwd = agent.session.header.cwd
     if (cwd === undefined || cwd.length === 0) return null
     const root = await workspaceRootFor(cwd)
@@ -211,102 +263,93 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
     }
   }
 
-  async function guardsFor(route: { provider: string; model: string }, base: CallConfigShape): Promise<RequestGuards> {
+  async function guardsFor(
+    route: { provider: string; model: string },
+    source: RouteSelection | undefined,
+  ): Promise<RequestGuards> {
     if (llm === undefined) return NO_GUARDS
     const providers = registeredProviders()
     const target = await modelFactsFor(route.provider, route.model)
-    const source = await modelFactsFor(base.provider, base.model)
+    const sourceFacts = source === undefined ? null : await modelFactsFor(source.provider, source.model)
     return {
       providers,
       targetEfforts: target?.efforts ?? null,
       targetInputModalities: target?.modalities ?? null,
-      sourceInputModalities: source?.modalities ?? null,
+      sourceInputModalities: sourceFacts?.modalities ?? null,
       targetUnresolvable: target === null,
     }
   }
 
-  function describeConfig(config: CallConfigShape): string {
-    return `${config.provider}/${config.model}${config.reasoningEffort === undefined ? '' : `/${config.reasoningEffort}`}`
+  function describeRoute(route: { provider: string; model: string }): string {
+    return `${route.provider}/${route.model}`
   }
 
-  // ── lifecycle bookkeeping ──────────────────────────────────────────────────
+  /**
+   * Validate one policy route and record it as the agent's durable model
+   * selection. Declines (with warnings logged) when the guards reject it.
+   */
+  async function selectRoute(
+    agent: AgentLike,
+    route: { provider: string; model: string; reasoningEffort?: string },
+    budget: Parameters<typeof resolveRouteSelection>[0]['budget'],
+    reason: string,
+  ): Promise<boolean> {
+    const model = modelOf(agent)
+    if (model === null) return false
+    const source = model.current()
+    const guards = await guardsFor(route, source)
+    const result = resolveRouteSelection({
+      route,
+      source,
+      budget,
+      guards,
+    })
+    for (const warning of result.warnings) {
+      ctx.logger.warn('[workspace-policy] agent %s: %s', String(agent.session.header.id ?? ''), warning)
+    }
+    if (result.kind === 'passthrough') return false
+    model.select(result.selection)
+    if (settings.log) {
+      ctx.logger.info(
+        '[workspace-policy] agent %s: %s route %s -> %s',
+        String(agent.session.header.id ?? ''),
+        reason,
+        source === undefined ? '(unset)' : describeRoute(source),
+        describeRoute(result.selection),
+      )
+    }
+    return true
+  }
+
+  // ── lifecycle: select the startup route before any step preparation ────────
 
   /**
-   * Record why this agent's session began, for the first-request rule.
+   * Record why this agent's session began, then select the policy route.
    *
-   * 0.2 delivers that origin as `agent/created`'s `source`; 0.1 delivered the
+   * 0.2 delivers the origin as `agent/created`'s `source`; 0.1 delivered the
    * same `SessionStartSource` value from `agent/session-start`. A payload
    * without a `source` is ignored, so binding both never clobbers a known one.
+   * `agent/created` is dispatched serially and awaited before the agent's
+   * queued work is released, so the selection lands before the first step.
    */
-  const recordSessionSource = (payload: { agent: Agent; source?: SessionStartSourceLite }): void => {
+  const recordSessionSource = (payload: { agent: AgentLike; source?: SessionStartSourceLite }): void => {
     if (typeof payload.source === 'string') stateFor(payload.agent).sessionSource = payload.source
   }
 
-  ctx.on('agent/created', recordSessionSource)
-  // The legacy 0.1 spelling. It is declared only by pre-0.2 typings and never
-  // emitted by 0.2, where binding it is inert — the cast keeps one build
-  // compiling against either event map.
-  const legacyOn = ctx.on as unknown as (name: string, listener: (payload: { agent: Agent; source?: SessionStartSourceLite }) => void) => unknown
-  legacyOn('agent/session-start', recordSessionSource)
-
-  ctx.on('agent/disposed', (payload) => {
-    agentStates.delete(payload.agent)
-  })
-
-  // ── prompt-assembly seam: name the route the request will actually use ─────
-  //
-  // Assembly runs BEFORE `agent/request`, and the entry point's own listener
-  // fills `{{provider}}` / `{{model}}` from its pre-request selection — the
-  // ambient default for a fresh session. This listener is registered at host
-  // boot, so it wraps that per-session listener and can restate the variables
-  // with the route the policy is about to apply, keeping the system prompt
-  // ("powered by the {{model}} model") truthful from the very first request.
-
-  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-    const result = await next()
+  ctx.on('agent/created', async (payload: { agent: AgentLike; source?: SessionStartSourceLite }) => {
+    recordSessionSource(payload)
     try {
-      const agent = context.agent
-      if (agent === undefined) return result
+      const agent = payload.agent
+      if (modelOf(agent) === null) return
       const slot = await policySlotFor(agent)
-      if (slot === null || slot.policy === null) return result
-      const route = previewRoute({
-        state: stateFor(agent),
-        policy: slot.policy,
-        isWorker: isWorkerAgent(agent),
-        hasLoggedHeader: agent.session.requestHeader() !== undefined,
-        hasPendingUserSelection: hasPendingUserSelection(agent),
-      })
-      if (route === undefined) return result
-      const providers = registeredProviders()
-      if (providers !== null && !providers.has(route.provider)) return result
-      return {
-        ...result,
-        variables: { ...result.variables, provider: route.provider, model: route.model },
-      }
-    } catch (error) {
-      ctx.logger.warn('[workspace-policy] prompt-assembly listener failed; leaving assembly unchanged: %o', error)
-      return result
-    }
-  })
-
-  // ── main seam: agent/request ───────────────────────────────────────────────
-
-  ctx.on('agent/request', async (payload, next) => {
-    const base: CallConfigShape = await next()
-    try {
-      if (payload.signal.aborted) return base
-      const slot = await policySlotFor(payload.agent)
-      if (slot === null || slot.policy === null) return base
-      const policy = slot.policy
-      const { agent, turn, step } = payload
+      if (slot === null || slot.policy === null) return
       const state = stateFor(agent)
 
-      const pick = pickRoute({
+      const pick = pickStartupRoute({
         state,
-        policy,
+        policy: slot.policy,
         isWorker: isWorkerAgent(agent),
-        turn,
-        step,
+        sessionSource: state.sessionSource,
         hasLoggedHeader: agent.session.requestHeader() !== undefined,
         hasPendingUserSelection: hasPendingUserSelection(agent),
       })
@@ -318,64 +361,76 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
             pick.reason,
           )
         }
-        return base
+        return
       }
 
-      const guards = await guardsFor(pick.route, base)
-      const materialized = materializeRoute({ route: pick.route, base, budget: policy.budget, guards })
-      for (const warning of materialized.warnings) {
-        ctx.logger.warn('[workspace-policy] agent %s: %s', String(agent.session.header.id ?? ''), warning)
-      }
-      if (materialized.kind === 'passthrough') return base
-      if (settings.log) {
-        ctx.logger.info(
-          '[workspace-policy] agent %s: %s route %s -> %s',
-          String(agent.session.header.id ?? ''),
-          pick.reason,
-          describeConfig(base),
-          describeConfig(materialized.config),
-        )
-      }
-      return materialized.config
+      await selectRoute(agent, pick.route, slot.policy.budget, pick.reason)
     } catch (error) {
-      ctx.logger.warn('[workspace-policy] request listener failed; passing through: %o', error)
-      return base
+      ctx.logger.warn('[workspace-policy] agent/created listener failed; leaving the route untouched: %o', error)
     }
+  })
+  // The legacy 0.1 spelling. It is declared only by pre-0.2 typings and never
+  // emitted by 0.2, where binding it is inert — the cast keeps one build
+  // compiling against either event map.
+  const legacyOn = ctx.on as unknown as (name: string, listener: (payload: { agent: AgentLike; source?: SessionStartSourceLite }) => void) => unknown
+  legacyOn('agent/session-start', recordSessionSource)
+
+  ctx.on('agent/disposed', (payload: { agent: AgentLike }) => {
+    agentStates.delete(payload.agent)
   })
 
   // ── fallback seam: agent/request-error ─────────────────────────────────────
+  //
+  // Registered through a local cast: the pinned devDependency typings type the
+  // waterfall's `next` as a concrete action union this glue only passes
+  // through, and the runtime contract (delegate via next) is identical.
 
-  ctx.on('agent/request-error', async (payload, next) => {
+  const onRequestError = ctx.on as unknown as (
+    name: string,
+    listener: (payload: {
+      agent: AgentLike
+      signal: { aborted: boolean }
+      provider: string
+      failure: { code: string }
+    }, next: () => Promise<unknown>) => Promise<unknown>,
+  ) => unknown
+
+  onRequestError('agent/request-error', async (payload, next) => {
     try {
-      if (!payload.signal.aborted) {
+      if (!payload.signal.aborted && modelOf(payload.agent) !== null) {
         const slot = await policySlotFor(payload.agent)
         if (slot !== null && slot.policy !== null) {
           const state = stateFor(payload.agent)
           const decision = decideRequestError({
             state,
             policy: slot.policy,
-            turn: payload.turn,
-            step: payload.step,
             code: payload.failure.code,
             failedProvider: payload.provider,
           })
           if (decision.kind === 'takeover') {
-            if (settings.log) {
+            const selected = await selectRoute(
+              payload.agent,
+              decision.route,
+              slot.policy.budget,
+              `fallback #${decision.index + 1} after ${payload.failure.code}`,
+            )
+            if (selected && settings.log) {
               ctx.logger.info(
-                '[workspace-policy] agent %s: %s on %s; degrading to fallback #%d',
+                '[workspace-policy] agent %s: %s on %s; next turn degrades to the fallback route (the failed step keeps its fixed selection)',
                 String(payload.agent.session.header.id ?? ''),
                 payload.failure.code,
                 payload.provider,
-                decision.index + 1,
               )
             }
-            return { kind: 'retry' }
           }
         }
       }
     } catch (error) {
       ctx.logger.warn('[workspace-policy] request-error listener failed; delegating: %o', error)
     }
+    // Always delegate: a { kind: 'retry' } would re-run the failed step on its
+    // already-fixed (dead) route; the recorded selection takes over on the
+    // session's next turn instead.
     return next()
   })
 }
