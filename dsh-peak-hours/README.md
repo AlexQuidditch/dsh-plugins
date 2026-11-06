@@ -95,6 +95,7 @@ dsh plugin --profile web add ~/projects/dsh-plugins/dsh-peak-hours
 ## Тест
 
 ```bash
+pnpm install --store-dir ../.pnpm-store   # devDep: @deepseek-ai/cordis (первый раз скачает из npm)
 node activation.test.mjs   # движок, гейт, канал и регистрация индикатора
 ```
 
