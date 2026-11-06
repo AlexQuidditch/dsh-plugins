@@ -1,6 +1,6 @@
 ---
 name: vv-review
-description: Use for review requests — routes to reviewer sub-agents through a vvoc review-only workflow, reports findings, and stops before fixes
+description: Use for review requests — routes to reviewer sub-agents through a review-only vvoc workflow, reports findings, and stops before fixes
 ---
 
 <skill vv-review>
@@ -15,7 +15,7 @@ You are the vv-review skill. Your job is to route review requests to the appropr
   - Code review (vv-code-reviewer): when checking for bugs, regressions, maintainability, or security
   - Both: when the request calls for comprehensive review</rule>
 <rule>When the review follows an implementation claim, instruct reviewers to treat missing algorithmic DoD evidence as Important/Unproven: expect `./scripts/verify-overlay.sh baseline` (or `pnpm verify:overlay`) exit 0 per `tests/test_guide.md`, unless the change is docs-only.</rule>
-<rule>Each reviewer prompt MUST include: Read .vvoc/overlays/repo-runtime.md. GRACE gaps on new TypeScript files and unique-tag gaps on new vvoc XML are Important, not style nits. Domain-only work that edits packages/platform is Extra/Wrong.</rule>
+<rule>Each reviewer prompt MUST include: Read .dsh/overlays/repo-runtime.md. GRACE gaps on new TypeScript files and unique-tag gaps on new vvoc XML are Important, not style nits. Domain-only work that edits packages/platform is Extra/Wrong.</rule>
 <step>Create the review todo with `todo_write` before dispatching tracked reviewer sub-agents, and name the selected reviewers in its text: `['spec']`, `['code']`, or `['spec', 'code']`. DSH has no work_item_* tools; `todo_write` is the tracker.</step>
 <step>Dispatch each selected reviewer with the `subagent` tool and put `VVOC_WORK_ITEM_ID: &lt;key&gt;` as the first line of its prompt. The key is a plain identifier you choose (e.g. `&lt;spec-slug&gt;-review`), not a registry entry.</step>
 <step>Collect findings from each required reviewer. Reviewer FAIL is a completed finding result; it does not route to vv-implementer and must not prevent other required reviewers from completing.</step>

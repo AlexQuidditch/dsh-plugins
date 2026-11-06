@@ -11,10 +11,25 @@
 #   - vv-controller     ← shipped `cordis` preset, minus `tool-cordis`
 #                         (self-modification is a trust boundary for preset
 #                         authoring, not part of a work agent), plus the vv
-#                         persona, the pinned subagent route and the six
-#                         vv-* skills shipped in this package's `skills/`.
+#                         persona, the pinned subagent route, the six vv-*
+#                         skills shipped in this package's `skills/`, and the
+#                         `vv-worker` child preset its subagents compose.
 #   - standard-browser  ← shipped `standard` preset, plus one
-#                         `subagent_browser` delegation tool.
+#                         `subagent_browser` delegation tool wired to the
+#                         `browser-subagent` child preset.
+#
+# 0.2.1 migration note. `@deepseek-ai/dsh-tool-subagent` no longer accepts
+# `persona` or `toolFilter`: the row throws at load with "persona is no
+# longer supported; configure persona and tool plugins in an Agent Preset and
+# select it with agentPreset (spawn only)". A child's persona and tool list
+# are now an Agent Preset of their own, selected from the tool row with
+# `agentPreset: <id>` — that is why this bundle declares two extra presets
+# (`vv-worker`, `browser-subagent`) next to the two user-facing ones.
+# `backgroundMode` disappeared in 0.2.1 as well (children are continuable by
+# default), so those rows are gone. Note that `toolFilter` has no replacement:
+# the old "only chrome_*" allowlist cannot be expressed any more, and
+# `dsh-plugin-chrome` mounts host-globally anyway, so a browser child sees the
+# chrome_* suite without listing it in its preset.
 #
 # The shipped 0.1.x lists both presets were copied from named
 # `@deepseek-ai/dsh-workflow-worker-thread`, which has no 0.2 release; the
@@ -26,6 +41,141 @@
 # profile patch, so the bundle stays the fallback layer.
 
 - insert:
+    # ── child presets (composed by the delegation tools below) ──────────────
+    #
+    # These two rows are not meant to be picked for a session: they are the
+    # personas and tool lists that the parent presets' subagent tools compose.
+    # They are declared first so the parent rows can resolve `agentPreset`
+    # when their trees mount.
+    - id: preset-vv-worker
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vv-worker
+        name: 'vv-worker (subagent)'
+        description: 'Исполнитель для субагентов vv-controller: одна делегированная роль, без vv-роутинга и гейтов.'
+        order: 7
+        plugins:
+          # Children must NOT re-run the vv routing policy (they execute one
+          # delegated role prompt), so the persona is a pure executor contract.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a delegated subagent executing one self-contained task for
+                the vv-controller agent. Follow the task prompt exactly, verify what
+                you can, and report a concise factual result. Browser policy: you
+                have the full chrome_* tool suite. Whenever the task touches a user
+                interface, prefer opening it in Chrome and taking chrome_screenshot
+                to observe the actual rendered state — seeing the interface beats
+                guessing from markup and speeds up the work, and your model accepts
+                image input. Use chrome_snapshot for stable element uids when you
+                need to interact. PC-testing baseline: when the task tests or
+                verifies a desktop (PC) UI, first set the Chrome window to
+                1440x900 px — chrome_evaluate `window.resizeTo(1440, 900)`, then
+                confirm `window.outerWidth`/`window.outerHeight` — and take every
+                screenshot and UI check at that base viewport; if the exact size
+                cannot be set, report the achieved viewport instead of staying
+                silent. When debugging UI behavior, capture the browser console
+                right after page load (chrome_evaluate a small collector that
+                buffers console.error/console.warn and window.onerror) and read it
+                before reporting — console output is a primary debugging signal.
+                Mandatory cleanup: if this task opened a Chrome
+                window, your LAST tool call before the final answer MUST be
+                chrome_close — never leave the window for the idle timeout to reap.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          # The vv investigation trajectory may need a source the controller
+          # linked; implementers/reviewers read it themselves.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          # A child that inherits the parent preset would have the delegation
+          # group's messaging tools; an independent child preset loses them.
+          # `send_message` must exist in the child scope for the subagent
+          # runtime to inject its "report to your parent" guidance, so mount
+          # the control tools here too (send_message + interrupt_agent).
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          # Long implementation waves should compact instead of dying on the
+          # context window.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    - id: preset-browser-subagent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: browser-subagent
+        name: 'browser-subagent (subagent)'
+        description: 'Браузерный субагент standard-browser: браузерный контракт в персоне; chrome_* приходят host-глобально.'
+        order: 8
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              # No shell/fs entries in this preset: the child gets the
+              # host-global chrome_* suite and nothing to code with.
+              prefix: >-
+                You are a browser-automation subagent. You drive a real Chrome window
+                through the chrome_* tools: open pages, read accessibility snapshots,
+                click, fill, scroll, and screenshot. Prefer chrome_snapshot for
+                structure and uid-based interaction; take a chrome_screenshot when the
+                visual layout matters — your model accepts image input, so screenshots
+                are safe. Default window size: immediately after opening the Chrome
+                window, resize it to 1440x900 px — chrome_evaluate
+                `window.resizeTo(1440, 900)`, then confirm
+                `window.outerWidth`/`window.outerHeight` — and keep that as the base
+                viewport for every page you visit and every screenshot you take
+                (PC-version baseline); if the exact size cannot be set, report the
+                achieved viewport instead of staying silent. Work strictly inside the browser: you have no shell, file,
+                or web-search tools, and no way to delegate further. Your Chrome window
+                closes itself after roughly ten minutes idle, so keep working rather
+                than parking on a page. Return a concise factual report of what you
+                found or did, with the final page URLs; state failures plainly instead
+                of retrying endlessly.
+          # The old toolFilter allowlist kept `send_message` for browser
+          # children; with an independent child preset the control tools must be
+          # mounted here to preserve parent↔child messaging (and the runtime's
+          # report-to-parent guidance).
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
     # ── vv-controller ───────────────────────────────────────────────────────
     - id: preset-vv-controller
       name: '@deepseek-ai/dsh-agent-preset'
@@ -43,7 +193,7 @@
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: |-
-                You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
+                You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is the workspace root supplied by the runtime context.
 
                 You follow the vv work policy — a spec-first, review-driven workflow ported from vv-opencode:
 
@@ -52,8 +202,9 @@
                    - Unclear behavior, bugs, or failures → investigate the root cause first (read, reproduce, diagnose), then a targeted fix and verification. Never patch symptoms.
                    - Features, creative work, or broad changes with no agreed contract → vv-spec → explicit approval → vv-plan → explicit approval → vv-execute. Never jump straight into edits.
                    - The user wants findings rather than fixes → vv-review (reports and stops).
+                   Execution model is fixed, not a menu: once a plan is approved, vv-execute hands implementation to a dedicated executor managed session spawned with session_spawn; the planning/controller session never implements the plan and never offers same-session implementation as an option.
 
-                2. Skills: the session skill catalog lists each skill and when it applies. Load the matching skill with the skill tool before starting that workflow: vv-spec (feature with no agreed contract), vv-plan (an approved spec), vv-execute (an approved plan), vv-review (findings only), vv-reflect (durable lessons after long work), vv-handoff (ending a session with context to preserve). Explicit user instructions always win over these triggers.
+                2. Skills: the session skill catalog lists each skill and when it applies. Load the matching skill with the skill tool before starting that workflow: vv-spec (feature with no agreed contract), vv-plan (an approved spec), vv-execute (an approved plan — spawns the dedicated executor managed session), vv-review (findings only), vv-reflect (durable lessons after long work), vv-handoff (ending a session with context to preserve). Explicit user instructions always win over these triggers.
 
                 3. Approval gates: every gate waits for an explicit user answer through ask_user_question. A spec or plan is never "assumed approved", and conversational agreement approves nothing. Approved artifacts are the only source of truth for execution.
 
@@ -69,6 +220,8 @@
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
               maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
@@ -83,6 +236,8 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
           - id: command-goal
             name: '@deepseek-ai/dsh-command-goal'
           - id: tool-goal
@@ -133,8 +288,10 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+                # 0.2.2: the main entry registers send_message, interrupt_agent,
+                # AND list_agents together; the separate ./list-agents sub-entry
+                # was removed from the package exports, so the extra row that
+                # mounted it made this preset fail activation ("never started").
               # vv subagents (implementer / reviewer / spec-review roles embedded
               # in the vv-execute and vv-review skills) are pinned to the fast
               # DeepSeek-V41-Flash route at maximum reasoning effort; the
@@ -143,37 +300,21 @@
               # No `modelSelectionSettings`, so the route cannot be overridden
               # per call.
               #
-              # No toolFilter here, deliberately: these children are coding
-              # agents that need bash/fs/edit for implementation and review —
-              # the chrome_* suite reaches them anyway as host-global tools, so
-              # "always have browser access" holds without narrowing anything
-              # else.
+              # Children compose the `vv-worker` preset: its persona is the pure
+              # executor contract and its plugin list is the coding toolset the
+              # implementer/reviewer roles need. DSH 0.2.1 rejects `persona` and
+              # `toolFilter` on this row at load, so an independent child preset
+              # selected with `agentPreset` is the seam for both.
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
-                  backgroundMode: continuable
+                  agentPreset: vv-worker
                   agentOptions:
                     provider: deepseek-official
                     model: deepseek-flash
                     reasoningEffort: max
-                  # Child persona shadows the persona prefix: children must NOT
-                  # re-run the vv routing policy (they execute one delegated
-                  # role prompt), so this replaces the controller persona with a
-                  # pure executor contract.
-                  persona: >-
-                    You are a delegated subagent executing one self-contained task for
-                    the vv-controller agent. Follow the task prompt exactly, verify what
-                    you can, and report a concise factual result. Browser policy: you
-                    have the full chrome_* tool suite. Whenever the task touches a user
-                    interface, prefer opening it in Chrome and taking chrome_screenshot
-                    to observe the actual rendered state — seeing the interface beats
-                    guessing from markup and speeds up the work, and your model accepts
-                    image input. Use chrome_snapshot for stable element uids when you
-                    need to interact. Mandatory cleanup: if this task opened a Chrome
-                    window, your LAST tool call before the final answer MUST be
-                    chrome_close — never leave the window for the idle timeout to reap.
               # Fork is deliberately NOT model-pinned: a fork child continues
               # this same conversation, so it keeps the parent's route for
               # KV-cache reuse and coherence. Model pinning applies to
@@ -183,14 +324,12 @@
                 config:
                   provider: fork
                   toolName: subagent_fork
-                  backgroundMode: continuable
               - id: tool-subagent-codex
                 name: '@deepseek-ai/dsh-tool-subagent'
                 disabled: true
                 config:
                   provider: codex
                   toolName: subagent_codex
-                  backgroundMode: one-shot
                   maxDepth: provider-managed
               - id: tool-subagent-claude-code
                 name: '@deepseek-ai/dsh-tool-subagent'
@@ -198,7 +337,6 @@
                 config:
                   provider: claude-code
                   toolName: subagent_claude_code
-                  backgroundMode: one-shot
                   maxDepth: provider-managed
               # NOTE: workflow and ralph children cannot be model-pinned — these
               # rows accept no agentOptions, so their agents inherit the
@@ -254,10 +392,10 @@
         name: 'Standard + браузерные субагенты'
         description: >-
           Полный кодинг-агент как в стандартном режиме, плюс инструмент
-          subagent_browser: браузерные субагенты на модели DeepSeek-V41-Flash
-          (принимает изображения) с доступом только к chrome_* инструментам.
-          Несколько таких субагентов работают параллельно, каждый в своём окне
-          Chrome.
+          subagent_browser: браузерные субагенты на DeepSeek Flash (принимает
+          изображения), которые собираются из дочернего пресета
+          browser-subagent; chrome_* приходят к ним host-глобально. Несколько
+          таких субагентов работают параллельно, каждый в своём окне Chrome.
         order: 6
         plugins:
           - id: persona
@@ -268,20 +406,23 @@
               # reach for subagent_browser and that parallel calls each get
               # their own Chrome window.
               suffix: >-
-                Your working directory is {{cwd}}.
+                Your working directory is the workspace root supplied by the runtime context.
 
 
                 Delegating browser work (only when your own tool list includes
                 subagent_browser): for any task that means driving a real browser, call
                 subagent_browser instead of using chrome_* tools yourself. Its children
-                run on a vision-capable model with only the chrome_* tool suite; each
-                child owns its own isolated Chrome window, so several subagent_browser
+                compose the browser-subagent preset — a browser contract and none of
+                your shell, file, or search tools — run on a vision-capable model, and
+                each owns its own isolated Chrome window, so several subagent_browser
                 calls with run_in_background: true browse in parallel. Give each child a
                 self-contained task and collect the results with job_output.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
               maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
@@ -296,6 +437,8 @@
               sampleOverCapGlobResults: false
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
           - id: tool-skill
@@ -350,89 +493,47 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+                # 0.2.2: list_agents now ships in this main entry; the separate
+                # ./list-agents sub-entry no longer exists (see vv-controller).
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
                   modelSelectionSettings: true
-                  backgroundMode: continuable
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: fork
                   toolName: subagent_fork
-                  backgroundMode: continuable
-              # Browser subagents: children pinned to the DeepSeek-V41-Flash
-              # route (it accepts image input, so a screenshot in history is
-              # safe there) and filtered down to the host-registered chrome_*
-              # suite — the allow list removes every other tool, shell and
-              # filesystem included, so the child literally cannot leave the
-              # browser. `toolFilter` validates the names at registration and
-              # fails loud on a typo, which is the guard this list relies on: it
-              # must stay in sync with dsh-plugin-chrome's registry.
+              # Browser subagents: children compose the `browser-subagent`
+              # preset (browser persona; no shell, file, or search rows) while
+              # the host-global chrome_* suite supplies the tools themselves —
+              # `dsh-plugin-chrome` mounts one host row, so the suite reaches
+              # every agent anyway and never needed the old toolFilter list.
+              # 0.2.1 has no per-tool filter, so the preset is now the only
+              # narrowing seam: a browser child cannot be pinned to chrome_*
+              # alone, but it does not carry coding tools of its own.
               #
               # Each child session mints its own id, so each one gets its own
               # Chrome window with its own user-data-dir; children serialize
               # internally but never against each other.
-              #
-              # continuable: the call returns a durable child id instead of a
-              # Job id, and the child keeps a live session the parent can steer
-              # mid-flight with send_message and that can message its direct
-              # parent back through the same shared tool definition.
               - id: tool-subagent-browser
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent_browser
-                  backgroundMode: continuable
+                  agentPreset: browser-subagent
                   agentOptions:
                     provider: deepseek-official
                     model: deepseek-flash
                     reasoningEffort: max
-                  persona: >-
-                    You are a browser-automation subagent. You drive a real Chrome window
-                    through the chrome_* tools: open pages, read accessibility snapshots,
-                    click, fill, scroll, and screenshot. Prefer chrome_snapshot for
-                    structure and uid-based interaction; take a chrome_screenshot when the
-                    visual layout matters — your model accepts image input, so screenshots
-                    are safe. Work strictly inside the browser: you have no shell, file,
-                    or web-search tools, and no way to delegate further. Your Chrome window
-                    closes itself after roughly ten minutes idle, so keep working rather
-                    than parking on a page. Return a concise factual report of what you
-                    found or did, with the final page URLs; state failures plainly instead
-                    of retrying endlessly.
-                  toolFilter:
-                    allow:
-                      # send_message: the child→parent channel for continuable
-                      # children. Without it the only feedback is the settlement
-                      # notification at completion.
-                      - send_message
-                      - chrome_open
-                      - chrome_status
-                      - chrome_close
-                      - chrome_navigate
-                      - chrome_tabs
-                      - chrome_snapshot
-                      - chrome_screenshot
-                      - chrome_click
-                      - chrome_click_at
-                      - chrome_fill
-                      - chrome_type
-                      - chrome_press_key
-                      - chrome_hover
-                      - chrome_scroll
-                      - chrome_evaluate
-                      - chrome_wait
               - id: tool-subagent-codex
                 name: '@deepseek-ai/dsh-tool-subagent'
                 disabled: true
                 config:
                   provider: codex
                   toolName: subagent_codex
-                  backgroundMode: one-shot
                   maxDepth: provider-managed
               - id: tool-subagent-claude-code
                 name: '@deepseek-ai/dsh-tool-subagent'
@@ -440,7 +541,6 @@
                 config:
                   provider: claude-code
                   toolName: subagent_claude_code
-                  backgroundMode: one-shot
                   maxDepth: provider-managed
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'

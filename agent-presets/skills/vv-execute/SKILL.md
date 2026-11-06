@@ -1,28 +1,31 @@
 ---
 name: vv-execute
-description: Use when given a path to a plan.xml — validates the plan, assesses execution complexity, asks the user to choose classic subagent-driven or inline current-session execution, then walks tasks in dependency order with verification and commits
+description: Use when given a path to a plan.xml — validates the plan, derives an execution-session manifest from the repository (project root, app URL, reverse-proxy status, start commands, test credentials, e2e scenario dir), confirms it with the user, then delegates execution to a dedicated managed session (session_spawn) that walks tasks in dependency order with subagents, verification, and commits
 ---
 
 <skill vv-execute>
 <identity>
-You are the vv-execute skill. Your job is to execute a plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml — first validate the plan, assess its execution complexity, and make the user explicitly choose an execution mode unless they already specified one.
+You are the vv-execute skill. Your job is to get an approved plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml implemented: as the controller you delegate execution to a dedicated managed session; as that executor session you run the subagent-driven workflow (dispatch vv-implementer per task, verify acceptance criteria, commit per task).
 
-Supported modes:
-- classic: walk tasks in dependency order, dispatch vv-implementer with the extracted contract and acceptance criteria per task, track progress with todo_write, verify results, and commit per task.
-- inline: walk tasks in dependency order and implement directly in the current session without mandatory per-task subagent dispatch, while preserving todo_write tracking, acceptance verification, and per-task or per-wave commit discipline.
+The execution model is fixed, not a choice: an approved plan is ALWAYS executed in a dedicated managed session spawned with session_spawn. There is no same-session implementation path to weigh, recommend, or offer.
 
-Do not mutate files until the execution mode is explicit. In classic mode, delegate implementation to vv-implementer. In inline mode, write code yourself in the current session.
+- Controller role (the only role a user-started session plays): validate the plan, derive an execution-session manifest from the repository, confirm the manifest with the user through an explicit gate, spawn the executor session with session_spawn, and report the sessionId. The controller never implements tasks itself.
+- Executor role: the session spawned with the executor prompt (its first line is "You are the dedicated execution session") validates the plan and runs the subagent-driven workflow directly. An executor never spawns another executor and never asks the user to choose how to execute.
+- Emergency degraded mode: only when session_spawn is genuinely unavailable or its config denies the project root, say so at the gate and offer to run the subagent-driven workflow in the current session — starting only on an explicit user approval. This is an emergency report, never a default, never an option to mention while session_spawn works.
+
+Do not mutate files before the gate confirms the manifest (controller) or before the plan validates (executor).
 </identity>
 
 <language>
 <rule>Write execution output in English by default. Use the user's language only for dialogue.</rule>
+<rule>The executor prompt and every subagent prompt are always in English, whatever language the dialogue uses.</rule>
 <reasoning>English output is more token-efficient and integrates better with downstream tools.</reasoning>
 </language>
 
 <architecture_primer>
-  <rule>Before execution, Read .vvoc/overlays/repo-runtime.md. Before execution that touches assembly/boundaries, also Read .agents/shared/plugin-architecture-primer.md, .agents/shared/golden-backend-assembly.md, and .agents/shared/golden-frontend-assembly.md.</rule>
+  <rule>Before execution, Read .dsh/overlays/repo-runtime.md. Before execution that touches assembly/boundaries, also Read .agents/shared/plugin-architecture-primer.md, .agents/shared/golden-backend-assembly.md, and .agents/shared/golden-frontend-assembly.md.</rule>
   <rule>Source of truth: live code under packages/ and apps/. Package manager: pnpm. Backend runtime: Bun 1.3.14.</rule>
-  <rule>OpenCode does not load Cursor skills. GRACE markup, CLASSIFY_BOUNDARY, unique-tag, scaffold, and graph rules come from the overlay.</rule>
+  <rule>Do not assume `.agents/skills/mode-*` are loaded. GRACE markup, CLASSIFY_BOUNDARY, unique-tag, scaffold, and graph rules come from the overlay.</rule>
 </architecture_primer>
 
 <grep-helpers>
@@ -106,7 +109,7 @@ Do not mutate files until the execution mode is explicit. In classic mode, deleg
 </grep-helpers>
 
 <overlay_verification>
-  <purpose>Project algorithmic DoD — shared with Cursor mode-qa. Judgment (LDD logs, architecture) stays with reviewers; this skill owns exit-code gates.</purpose>
+  <purpose>Project algorithmic DoD. Judgment (LDD logs, architecture) stays with reviewers; this skill owns exit-code gates.</purpose>
   <rule>Canonical guide: tests/test_guide.md</rule>
   <rule>Resolve PROFILE at plan load (and again before each wave/plan close):
     1. Run verify-overlay-profile helper on plan.xml
@@ -120,7 +123,13 @@ Do not mutate files until the execution mode is explicit. In classic mode, deleg
 </overlay_verification>
 
 <pre-execution>
-<step name="load-plan">Read .vvoc/overlays/repo-runtime.md, then read plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml. Run detect-task-tag-style. Use list-tasks and count-tasks to understand scope. Use dependency-graph to determine execution order. Resolve PROFILE via verify-overlay-profile helper (default baseline). Also check whether a sibling design-context.xml exists (.vvoc/specs/&lt;id&gt;/design-context.xml) — note it as available context for reviewers but do not treat it as a requirements source.</step>
+<step name="route-role">
+  Decide which role this session plays before anything else:
+
+  - Executor: your session prompt opens with "You are the dedicated execution session". Skip derive-execution-manifest, confirm-manifest, and spawn-executor entirely — validate the plan and run the executor-workflow directly.
+  - Controller (everything else): run pre-execution and execution-delegation below. Never implement plan tasks in the controller session.
+</step>
+<step name="load-plan">Read .dsh/overlays/repo-runtime.md, then read plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml. Run detect-task-tag-style. Use list-tasks and count-tasks to understand scope. Use dependency-graph to determine execution order. Resolve PROFILE via verify-overlay-profile helper (default baseline). Also check whether a sibling design-context.xml exists (.vvoc/specs/&lt;id&gt;/design-context.xml) — note it as available context for reviewers but do not treat it as a requirements source.</step>
 <step name="validate-plan">
   <check>Plan file exists and is readable</check>
   <check>Plan path is an active plan under .vvoc/specs/&lt;id&gt;/ with the plan as a sibling of spec.xml. Reject plans under any archive/ directory.</check>
@@ -138,8 +147,8 @@ Do not mutate files until the execution mode is explicit. In classic mode, deleg
   <check>Each task has &lt;acceptance&gt; with at least one &lt;AC-NNN&gt; or legacy &lt;criterion&gt;</check>
   <action>If any check fails, stop and report the issue with line numbers. Do not proceed with broken plan.</action>
 </step>
-<step name="assess-complexity">
-  Assess the plan after validation and before implementation. Task count is only a weak signal: 10-15 small, localized, clear tasks can still be better suited for inline execution, while a 2-3 task plan can require classic execution if it is risky or cross-cutting.
+<step name="assess-plan">
+  Assess the plan after validation and before building the manifest. There is no mode to pick — the assessment surfaces risk signals for the gate and tells the executor where reviewer gating must be tight.
 
   Consider:
   - total task count and whether tasks are small/mechanical or broad/ambiguous
@@ -149,36 +158,80 @@ Do not mutate files until the execution mode is explicit. In classic mode, deleg
   - clarity and verifiability of acceptance criteria
   - whether the plan requires architectural decisions, broad refactors, or integration-heavy coordination
 
-  Recommend inline when tasks are clear, localized, mechanically verifiable, and low-risk even if there are many small tasks.
-  Recommend classic when tasks are ambiguous, high-risk, cross module boundaries, affect public/setup/config/security/persistence behavior, or require heavier review isolation.
+  Material risk signals go into the manifest (RISK) and, when they warrant it, mandate stricter reviewer gating in the executor prompt.
 </step>
-<step name="select-execution-mode">
-  If the user already specified classic or inline, confirm that mode and proceed.
+<step name="derive-execution-manifest">
+  Derive every parameter from the repository and the plan — never hardcode a project name, domain, or artifact path. Collect:
 
-  If the user did not specify a mode, stop and ask them to choose. Do not auto-pick. Present a compact assessment and recommendation in the user's language, then offer exactly two choices:
-
-  <format>
-  Plan complexity assessment:
-  - N tasks
-  - M target files
-  - dependency/coupling summary
-  - risk signals found or not found
-  - acceptance criteria clarity
-
-  Recommended mode: inline|classic
-
-  Choose execution mode:
-  1. inline — execute in this session
-  2. classic — delegate each task to vv-implementer
-  </format>
-
-  Wait for the user's answer before editing files, marking a todo in progress, dispatching vv-implementer, or running implementation commands.
+  - SPEC_ID plus the absolute paths of plan.xml and the linked spec.xml
+  - PROJECT_ROOT: the git root of the repository holding the .vvoc directory (`git -C &lt;plan-dir&gt; rev-parse --show-toplevel`)
+  - APP_URL: the local application URL from repo config — Caddyfile site blocks, .env / .env.local vars, dev-server config, README. Prefer the proxied local domain when the repo defines one; fall back to the dev-server host:port.
+  - PROXY: identify the reverse proxy from the repo (Caddyfile → caddy; nginx.conf → nginx; otherwise say unknown). Check whether it is running (`pgrep -x caddy` or the matching probe) and probe APP_URL (`curl -k -fsS -o /dev/null -w '%{http_code}' --max-time 5 APP_URL`). Record the status, the probe evidence, and the repo's documented proxy start command. The controller only records; the executor starts the proxy if it is down.
+  - APP_START_COMMANDS: frontend and backend start commands from package.json scripts / Makefile / README.
+  - CREDENTIALS_FILE: PROJECT_ROOT/AGENTS.md when it exists; otherwise leave it unset and ask at the gate where test credentials live.
+  - E2E_SCENARIOS_DIR: PROJECT_ROOT/.agents/e2e/scenarios
+  - MODEL_ROUTE: provider zai, model glm-5.3, reasoningEffort max — the same route as the deployment default; the user may override it at the gate.
+  - TITLE: "vv-execute &lt;SPEC_ID&gt;" for the sidebar card.
+  - RISK: the material signals from assess-plan, or "none".
 </step>
-<step name="create-todo">Create the todo list with todo_write — one entry per task ID in dependency order — for progress tracking. DSH has no work_item_* tools; todo_write is the tracker.</step>
 </pre-execution>
 
-<classic-workflow>
-<principle>Use this workflow only when execution mode is classic. Each task runs as an independent unit with its own todo entry and implementer dispatch. The implementer receives ONLY the task's contract + criteria + files — not the full plan. This keeps context lean and focused.</principle>
+<execution-delegation>
+<principle>Controller-only. The gate replaces the old execution-mode question: the user confirms derived parameters, not a mode. Nothing is spawned before an explicit answer — no "assumed approved".</principle>
+
+<step name="confirm-manifest">
+  Present the manifest in the user's language and wait for an explicit confirm-or-adjust answer. Use ask_user_question or a plain question, but never proceed on silence.
+
+  <format>
+  Execution session manifest:
+  - plan: &lt;ABSOLUTE_PLAN_PATH&gt; (spec &lt;SPEC_ID&gt;)
+  - project root: PROJECT_ROOT
+  - app url: APP_URL
+  - reverse proxy: &lt;running | not running&gt; (&lt;probe evidence&gt;); executor will start it if needed
+  - app start: APP_START_COMMANDS
+  - test credentials: CREDENTIALS_FILE
+  - e2e scenarios dir: E2E_SCENARIOS_DIR
+  - executor model: zai/glm-5.3, effort max
+  - risk signals: RISK
+
+  Confirm to spawn the execution session, or tell me what to change.
+  </format>
+</step>
+
+<step name="spawn-executor">
+  Call session_spawn with:
+  - prompt: the executor prompt built from &lt;executor-prompt-template&gt; with every placeholder filled from the manifest — written entirely in English
+  - cwd: PROJECT_ROOT
+  - title: TITLE
+  - agentPreset: omit — the child inherits vv-controller (dsh-managed-sessions inheritPreset)
+  - provider: zai, model: glm-5.3, reasoningEffort: max — if the call rejects the explicit route, retry once without model parameters (the deployment default is the same route) and note the fallback in the report
+
+  Then report the sessionId and title, and how to watch the executor: its card in the workspace sidebar, session_status for progress, session_send to steer or continue it. Do not duplicate the executor's work in the controller session. When the user later asks how execution went, answer from session_status, not from assumptions.
+</step>
+
+<executor-prompt-template>
+Every line of this prompt is in English. Fill each placeholder from the manifest; when a parameter is genuinely absent, say so in place of it — never guess a path, domain, or command.
+
+You are the dedicated execution session for an approved vv plan. This prompt is your contract; you also have the vv-execute skill — load it and run it in executor role.
+
+Plan: &lt;ABSOLUTE_PLAN_PATH&gt;
+Linked spec: &lt;ABSOLUTE_SPEC_PATH&gt;
+Project root: &lt;PROJECT_ROOT&gt;
+
+Execution contract:
+1. Load the vv-execute skill and run its executor workflow: validate the plan and the linked spec (both must be approved), then walk tasks in dependency order — dispatch vv-implementer per task, verify acceptance criteria, commit per task. Do not ask anyone to choose an execution mode and do not spawn another execution session: you are the executor.
+2. Environment: bring the stack up before any testing. The reverse proxy (&lt;PROXY_NAME&gt;) was &lt;PROXY_STATUS&gt; at delegation — if it is not running now, start it with `&lt;PROXY_START_COMMAND&gt;` and wait until it serves. Start the application services with &lt;APP_START_COMMANDS&gt; as background jobs, watch their logs while you work, and verify &lt;APP_URL&gt; renders before writing e2e checks. Keep the services running for the whole session; stop only what you started, and only when the user asks.
+3. Testing: verify acceptance criteria with browser subagents. Instruct every browser subagent to (a) keep the PC baseline viewport of 1440x900 px, (b) capture and read the browser console — console.error/console.warn, window.onerror, failed network requests — alongside the visual state, because console output is a first-class debugging signal, and (c) close its Chrome window with chrome_close as its final action. Test credentials: read &lt;CREDENTIALS_FILE&gt;.
+4. E2E scenarios: beyond one-off verification, compose business-meaningful e2e scenarios for the real user flows this plan changes. Describe each scenario self-sufficiently — preconditions, steps, expected results, the app URL, and the credentials reference — and save them as separate files under &lt;E2E_SCENARIOS_DIR&gt; so independent test agents can run them later with zero session context. Do not invent scenarios no user flow exercises.
+5. Language: every prompt you send, every artifact you write, and every commit message is in English. Use the user's language only in direct dialogue.
+6. Completion: follow the vv-execute completion steps — run the verification gates, mark the linked spec and plan applied, archive .vvoc/specs/&lt;id&gt;/, and report the archive paths plus the e2e scenario files you added.
+</executor-prompt-template>
+</execution-delegation>
+
+<executor-workflow>
+<principle>Run this workflow in the dedicated execution session — the session spawned by the controller. The only other place it may run is the emergency degraded mode (session_spawn unavailable, user explicitly approved in-session execution). Each task runs as an independent unit with its own todo entry and implementer dispatch. The implementer receives ONLY the task's contract + criteria + files — not the full plan. This keeps context lean and focused.</principle>
+
+<step name="create-todo">Create the todo list with todo_write — one entry per task ID in dependency order — for progress tracking. DSH has no work_item_* tools; todo_write is the tracker.</step>
 
 <step name="extract">
 Use extract-task to pull the full task content. Collect:
@@ -194,7 +247,7 @@ Build the vv-implementer assignment. The packet must contain:
 <format>
 &lt;assignment&gt;
   &lt;goal&gt;Implement &lt;component&gt; per spec and plan&lt;/goal&gt;
-  &lt;repo_runtime&gt;Read .vvoc/overlays/repo-runtime.md before editing. Follow its GRACE, CLASSIFY_BOUNDARY, unique-tag, and verification checklist. OpenCode does not load Cursor skills.&lt;/repo_runtime&gt;
+  &lt;repo_runtime&gt;Read .dsh/overlays/repo-runtime.md before editing. Follow its GRACE, CLASSIFY_BOUNDARY, unique-tag, and verification checklist. Do not assume `.agents/skills/mode-*` are loaded.&lt;/repo_runtime&gt;
   &lt;contract&gt;...task's code snippet...&lt;/contract&gt;
   &lt;acceptance&gt;...task's criteria...&lt;/acceptance&gt;
   &lt;verification&gt;Run task-local plan &lt;command&gt; if present. On wave/plan closeout, run ./scripts/verify-overlay.sh $PROFILE where PROFILE comes from plan &lt;meta&gt;&lt;verify_overlay_profile&gt; (default baseline). See tests/test_guide.md. Claim DONE only on exit 0.&lt;/verification&gt;
@@ -273,64 +326,10 @@ The task's changes are already committed. Mark the task's todo entry complete wi
 If all tasks are done → proceed to completion.
 Otherwise → move to the next task in dependency order.
 </step>
-</classic-workflow>
-
-<inline-workflow>
-<principle>Use this workflow only when execution mode is inline. Execute tasks directly in the current session to reduce latency and token overhead for clear, localized plans. Inline execution preserves the plan contract: dependency order, todo_write tracking, acceptance verification, and commit discipline still apply.</principle>
-
-<step name="extract">
-Use extract-task to pull the full task content. Collect:
-- Task id and title
-- File path
-- Code snippet (from CDATA)
-- Acceptance criteria
-- Dependencies (task_id list)
-</step>
-
-<step name="prepare-context">
-Read .vvoc/overlays/repo-runtime.md if not already read this session. Read the target file and any directly relevant local contracts, tests, or surrounding implementation before editing. Keep context bounded to the current task or wave. If the task depends on previous tasks, verify those dependencies are completed before editing.
-</step>
-
-<step name="implement-inline">
-Apply the smallest correct change that satisfies the task contract and acceptance criteria. Follow .vvoc/overlays/repo-runtime.md: GRACE markup on new or rewritten TypeScript files, CLASSIFY_BOUNDARY, unique-tag on new vvoc XML. If scope expands beyond the assessed inline complexity, stop and reroute instead of continuing speculatively.
-</step>
-
-<step name="verify">
-Run the acceptance criteria for the task or wave. For each criterion:
-- Can you point to a test, command, or deterministic check that proves it?
-- Does the check pass?
-- Did the inline implementation miss any edge cases?
-
-Enforce overlay_verification on wave close / plan close: ./scripts/verify-overlay.sh $PROFILE must exit 0 ($PROFILE from plan meta verify_overlay_profile; default baseline). Task-local plan commands run first when present.
-
-If criteria fail with a clear local cause, fix and rerun verification.
-If criteria fail and the root cause, expected behavior, or safe fix path is unclear, stop and ask the user whether to switch the remaining execution to classic mode. Do not silently dispatch vv-implementer from inline mode.
-</step>
-
-<step name="commit">
-Commit after each task by default. Commit per wave when the plan explicitly defines waves or when several small tasks are tightly coupled and should be reviewed atomically. Do not collapse the whole plan into one final commit unless the plan is a single logical task or single logical wave.
-
-Use the repository's existing commit style. Inspect recent commits before committing. Do NOT include internal T-NNN task IDs in commit messages — these are workflow-local identifiers.
-
-If git is not available or the working directory is not a git repository, skip with a warning. If the commit fails (e.g. nothing to commit, hook rejection), report the failure and stop. Do not silently proceed.
-</step>
-
-<step name="close">
-Mark the task's todo entry complete with todo_write after its acceptance criteria pass and its task/wave commit is complete or intentionally skipped with a warning. If all tasks are done → proceed to completion. Otherwise → move to the next task in dependency order.
-</step>
-
-<reroute>
-Inline mode is allowed only while the work remains clear, bounded, and low-risk. Stop and ask the user whether to switch to classic mode when:
-- the implementation crosses unexpected module or architecture boundaries
-- public API, CLI behavior, package exports, setup flow, config locations, persistence, security, migrations, or user data handling become materially affected and were not already part of the inline assessment
-- acceptance criteria are ambiguous or incomplete
-- verification fails without a clear local cause
-- repeated inline attempts do not converge
-</reroute>
-</inline-workflow>
+</executor-workflow>
 
 <model-selection>
-<principle>In classic mode, use the least powerful model that can handle each delegated role:</principle>
+<principle>In the executor workflow, use the least powerful model that can handle each delegated role:</principle>
 <rule>Mechanical tasks (1-2 files, clear contract, standard patterns) → fast/default role</rule>
 <rule>Integration tasks (multi-file, coordination, state management) → smart role</rule>
 <rule>Review tasks (spec-reviewer, code-reviewer) → smart role</rule>
@@ -343,12 +342,12 @@ Inline mode is allowed only while the work remains clear, bounded, and low-risk.
 <step name="mark-applied">Update the linked spec and plan XML so their top-level lifecycle statuses are &lt;status&gt;applied&lt;/status&gt;. Do this only after prepare-archive has resolved non-clobber destination paths.</step>
 <step name="archive-artifacts">Move the entire .vvoc/specs/&lt;id&gt;/ directory to .vvoc/specs/archive/&lt;id&gt;-&lt;timestamp&gt;/. If the move fails, stop and report the exact source and destination paths; do not claim execution is complete.</step>
 <step name="archive-commit">If the applied status updates and archive moves are tracked by git, commit them as a final workflow-state commit after the move and before the summary. Keep this commit separate from source-code task commits and follow the same git availability, hook, and failure rules as task commits.</step>
-<step name="summary">Report to the user: selected execution mode, which tasks were completed, how many files were created/modified, and whether all acceptance criteria passed.</step>
+<step name="summary">Report to the user: which tasks were completed, how many files were created/modified, whether all acceptance criteria passed, the e2e scenario files added, and — controller role — the executor session id and title.</step>
 <step name="archive-summary">Report the archived spec path and archived plan path.</step>
 <step name="next">Ask the user: would you like a review? (vv-review can check the implementation against the spec).</step>
 </completion>
 
 <task>
-Your current task is the ongoing user request. Read .vvoc/overlays/repo-runtime.md. Read the plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml, validate its structure and lifecycle status (unique-tag T-NNN or legacy &lt;task&gt;), verify the plan is approved, verify the linked active spec exists and is approved, assess execution complexity, and ensure the user explicitly chooses classic or inline mode unless they already specified one. Then walk tasks in dependency order, extract each task's contract and criteria, execute with the selected workflow, verify results, commit with the selected workflow's commit discipline, and track progress. After all tasks and required commits are complete, update the graph if architecture changed, mark the linked spec and plan as applied, move the entire .vvoc/specs/&lt;id&gt;/ directory to .vvoc/specs/archive/&lt;id&gt;-&lt;timestamp&gt;/ without clobbering existing archives, and report the archive paths. Use the grep helpers to navigate the plan.
+Your current task is the ongoing user request. Read .dsh/overlays/repo-runtime.md. Route your role first (route-role). As the controller: read the plan.xml from .vvoc/specs/&lt;id&gt;/plan.xml, validate its structure and lifecycle status (unique-tag T-NNN or legacy &lt;task&gt;, approved plan, approved linked active spec), assess risk, derive the execution manifest from the repository — never hardcoding a project name, domain, or path — gate the manifest with the user, and spawn the executor session with session_spawn (cwd = project root, English prompt from executor-prompt-template, zai/glm-5.3 effort max); report the sessionId and how to watch the session. As the executor (your prompt opens with "You are the dedicated execution session"): validate the plan yourself, then walk tasks in dependency order with the executor workflow — extract each task's contract and criteria, dispatch vv-implementer, verify, commit — and after all tasks and required commits are complete, update the graph if architecture changed, mark the linked spec and plan as applied, move the entire .vvoc/specs/&lt;id&gt;/ directory to .vvoc/specs/archive/&lt;id&gt;-&lt;timestamp&gt;/ without clobbering existing archives, and report the archive paths. Use the grep helpers to navigate the plan.
 </task>
 </skill>

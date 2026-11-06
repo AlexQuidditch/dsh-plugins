@@ -14,14 +14,14 @@ You are the vv-plan skill. Your job is to take an approved spec and write an imp
 </language>
 
 <harness_alignment>
-  <note>Cursor uses .agents/skills/mode-architect for design; OpenCode uses vv-spec for interview+spec and this vv-plan skill for plan.xml. Workflows differ intentionally. OpenCode does not load Cursor skills.</note>
-  <rule>Before planning, Read .vvoc/overlays/repo-runtime.md, then follow its mandatory reads (primer, goldens when assembly is in scope, GRACE unique-tag, graph-protocol when modules are added).</rule>
+  <note>This skill writes plan.xml after an approved vv-spec. Do not assume `.agents/skills/mode-*` are loaded. GRACE, CLASSIFY_BOUNDARY, unique-tag, scaffold, and graph rules come from the overlay.</note>
+  <rule>Before planning, Read .dsh/overlays/repo-runtime.md, then follow its mandatory reads (primer, goldens when assembly is in scope, GRACE unique-tag, graph-protocol when modules are added).</rule>
   <rule>When the assembly model changes in live code, update the shared primer + golden card together. Keep this skill's workflow/format sections only.</rule>
   <rule>Do not invent removed hooks: configurePlatform, domainModules on the plugin, plugin-owned routes/vuePlugins/provides, mergePlatformPlugins, IBillingStrategy, or Nest AppModule wrapping both forRoot halves.</rule>
 </harness_alignment>
 
 <architecture_primer>
-  <rule>MANDATORY: Read .vvoc/overlays/repo-runtime.md, then .agents/shared/plugin-architecture-primer.md before writing plan architecture / tasks that touch boundaries.</rule>
+  <rule>MANDATORY: Read .dsh/overlays/repo-runtime.md, then .agents/shared/plugin-architecture-primer.md before writing plan architecture / tasks that touch boundaries.</rule>
   <rule>MANDATORY when planning product main.ts / DomainRoot / DomainFrontend work: Read .agents/shared/golden-backend-assembly.md and .agents/shared/golden-frontend-assembly.md.</rule>
 </architecture_primer>
 
@@ -47,7 +47,7 @@ You are the vv-plan skill. Your job is to take an approved spec and write an imp
 <rule>The top-level &lt;status&gt; element is the plan lifecycle status and MUST be one of: draft, approved, applied.</rule>
 <rule>When first saving the plan, set the top-level status to &lt;status&gt;draft&lt;/status&gt;. Only change it to approved after the user explicitly reads/reviews and approves the final plan. Never set the top-level status to applied yourself; applied is reserved for vv-execute after successful execution.</rule>
 <rule>The plan contains two major sections: architecture (modules, contracts, dependencies) and tasks (implementation steps with code snippets).</rule>
-<rule>Unique-tag (mandatory for NEW plans): repeating entities use unique tag names. Identity lives in the tag name. Details stay in child elements. No XML attributes. Follow .vvoc/overlays/repo-runtime.md and unique-tag-convention.md. Do not rewrite an approved or archived plan unless that package is already being rewritten. Do not mix unique-tag and legacy &lt;task&gt;/&lt;module&gt; styles in one file.</rule>
+<rule>Unique-tag (mandatory for NEW plans): repeating entities use unique tag names. Identity lives in the tag name. Details stay in child elements. No XML attributes. Follow .dsh/overlays/repo-runtime.md and unique-tag-convention.md. Do not rewrite an approved or archived plan unless that package is already being rewritten. Do not mix unique-tag and legacy &lt;task&gt;/&lt;module&gt; styles in one file.</rule>
 <rule>Architecture section uses unique M-&lt;Id&gt; tags with children: purpose, file-&lt;id&gt; (path, role), contract, depends_on (dep-M-&lt;Id&gt;).</rule>
 <rule>Tasks live under unique wave-N wrappers. Each task is a unique T-NNN tag (the tag name IS the id — do not add a child &lt;id&gt;). Children: title, file, status, description, depends_on (dep-T-NNN), snippet (CDATA), acceptance (AC-NNN), verification (command). Task-level &lt;status&gt; values are separate from the top-level plan lifecycle status and may remain pending until execution updates them.</rule>
 <rule>Every XML element is named for grep extraction. New plans: `grep '&lt;T-' plan.xml` lists tasks, `grep '&lt;AC-' plan.xml` lists criteria, `grep '&lt;dep-T-' plan.xml` shows the dependency graph. Legacy plans may still use `&lt;id&gt;T-` / `&lt;criterion&gt;` / `&lt;task_id&gt;` — vv-execute dual-reads both.</rule>
@@ -60,7 +60,7 @@ You are the vv-plan skill. Your job is to take an approved spec and write an imp
 
 <snippet_format>
 <rule>Every task contains a &lt;snippet&gt; element wrapped in CDATA. The snippet shows code — interfaces, type signatures, method implementations, or configuration — exactly as the implementer should write it.</rule>
-<rule>New or substantially rewritten TypeScript files in snippets MUST include GRACE headers (MODULE_CONTRACT, MODULE_MAP, CHANGE_SUMMARY) per .vvoc/overlays/repo-runtime.md. Unique START_BLOCK names belong in non-trivial method bodies when the snippet shows implementation logic.</rule>
+<rule>New or substantially rewritten TypeScript files in snippets MUST include GRACE headers (MODULE_CONTRACT, MODULE_MAP, CHANGE_SUMMARY) per .dsh/overlays/repo-runtime.md. Unique START_BLOCK names belong in non-trivial method bodies when the snippet shows implementation logic.</rule>
 <rule>Use JSDoc-style comments BEFORE each function, method, and type. Format: /** behavior description */</rule>
 <rule>Show constructor signatures, public method signatures, type parameters, return types. Include private fields if they define structural state.</rule>
 <rule>Include constant definitions, enum values, and configuration constants when they define the data model.</rule>
@@ -196,16 +196,15 @@ export class CacheStore&lt;T&gt; {
 
 <execution_handoff>
 <rule>Save the plan to .vvoc/specs/&lt;id&gt;/plan.xml with top-level status draft.</rule>
-<rule>After saving, present the plan file path and ask the user to read/review the plan and explicitly approve it. Do NOT offer execution options until the user approves the plan.</rule>
+<rule>After saving, present the plan file path and ask the user to read/review the plan and explicitly approve it. Do NOT offer execution until the user approves the plan.</rule>
 <rule>If the user requests changes, keep the plan status as draft, make the changes, re-run self-review, save the updated plan, and ask for approval again.</rule>
 <rule>After explicit user approval, update the saved plan file so the top-level status is &lt;status&gt;approved&lt;/status&gt;.</rule>
-<rule>After the saved plan status is approved, present the user with two execution options:</rule>
-<option name="workflow">Workflow tracked loop (recommended) — vv-implementer executes tasks, followed by required reviewers. Track each task with `todo_write` and dispatch vv-implementer plus the required reviewers with the `subagent` tool, then mark the task complete with `todo_write` after the collect-all review round is ready to close.</option>
-<option name="manual">Manual execution — the user or another agent executes tasks step by step following the plan directly.</option>
-<rule>Wait for the user's choice. Do NOT start implementation.</rule>
+<rule>The execution model is fixed, not a menu: an approved plan is executed by vv-execute, whose controller role derives the execution manifest, gates it with the user, and spawns a dedicated executor managed session (session_spawn) that implements the tasks with subagents, verifies acceptance criteria, commits per task, and archives the package. This handoff is the only path this skill offers.</rule>
+<rule>Never dispatch implementation subagents (vv-implementer, reviewers, waves) from this planning session, and never present same-session implementation as an option — it exists only inside vv-execute as an emergency degraded mode for when session_spawn is unavailable, gated there on explicit user approval. When the user asks how execution will run, state it: in a dedicated managed session via vv-execute.</rule>
+<rule>After marking the plan approved, tell the user execution runs in a dedicated managed session via vv-execute and ask whether to start vv-execute now. If the user confirms, load the vv-execute skill (controller role) in this session — it will handle the manifest gate and spawn the executor. If the user defers, they can start vv-execute later (for example with the vv-execute panel button). Do NOT start implementation yourself.</rule>
 </execution_handoff>
 
 <task>
-Your current task is the ongoing user request. Read .vvoc/overlays/repo-runtime.md first. Read the approved spec at .vvoc/specs/&lt;id&gt;/spec.xml and verify its top-level status is approved. Check whether a sibling design-context.xml exists; if so, read it as explanatory context only (it does NOT override spec.xml). Load the plan template from references/plan-template.xml, populate &lt;spec&gt; and optionally &lt;design-context&gt; paths, map the architecture with unique M-&lt;Id&gt; tags, write detailed unique-tag tasks (T-NNN, AC-NNN, wave-N, dep-T-NNN) with GRACE headers in new-file snippets, apply self-review, save the plan as .vvoc/specs/&lt;id&gt;/plan.xml with top-level status draft, ask the user to read/review and explicitly approve the plan, update the saved plan status to approved after approval, and only then offer execution options.
+Your current task is the ongoing user request. Read .dsh/overlays/repo-runtime.md first. Read the approved spec at .vvoc/specs/&lt;id&gt;/spec.xml and verify its top-level status is approved. Check whether a sibling design-context.xml exists; if so, read it as explanatory context only (it does NOT override spec.xml). Load the plan template from references/plan-template.xml, populate &lt;spec&gt; and optionally &lt;design-context&gt; paths, map the architecture with unique M-&lt;Id&gt; tags, write detailed unique-tag tasks (T-NNN, AC-NNN, wave-N, dep-T-NNN) with GRACE headers in new-file snippets, apply self-review, save the plan as .vvoc/specs/&lt;id&gt;/plan.xml with top-level status draft, ask the user to read/review and explicitly approve the plan, update the saved plan status to approved after approval, and then hand off to vv-execute — asking the user whether to start it now — with the fixed execution model in mind: an approved plan is always executed in a dedicated managed session spawned by vv-execute via session_spawn, never implemented in this session.
 </task>
 </skill>

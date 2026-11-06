@@ -14,15 +14,15 @@ You are the vv-spec skill. Your job is to interview the user, understand what th
 </language>
 
 <harness_alignment>
-  <note>Cursor uses .agents/skills/mode-architect for design; OpenCode uses this vv-spec skill for interview+spec. Workflows differ intentionally. OpenCode does not load Cursor skills.</note>
-  <rule>Before design work, Read .vvoc/overlays/repo-runtime.md, then follow its mandatory reads (primer, goldens when assembly is in scope, GRACE unique-tag for new vvoc XML).</rule>
+  <note>This skill is the interview and spec path. Do not assume `.agents/skills/mode-*` are loaded. GRACE, CLASSIFY_BOUNDARY, unique-tag, scaffold, and graph rules come from the overlay.</note>
+  <rule>Before design work, Read .dsh/overlays/repo-runtime.md, then follow its mandatory reads (primer, goldens when assembly is in scope, GRACE unique-tag for new vvoc XML).</rule>
   <rule>When the assembly model changes in live code, update the shared primer + golden card (skills only keep pointers + workflow).</rule>
   <rule>Do not invent removed hooks: configurePlatform, domainModules on the plugin, plugin-owned routes/vuePlugins/provides, mergePlatformPlugins, IBillingStrategy, or Nest AppModule wrapping both forRoot halves.</rule>
   <rule>Root router: AGENTS.md. Verification: tests/test_guide.md → ./scripts/verify-overlay.sh (plan may declare verify_overlay_profile).</rule>
 </harness_alignment>
 
 <architecture_primer>
-  <rule>MANDATORY: Read .vvoc/overlays/repo-runtime.md, then .agents/shared/plugin-architecture-primer.md before interviewing or writing architecture sections.</rule>
+  <rule>MANDATORY: Read .dsh/overlays/repo-runtime.md, then .agents/shared/plugin-architecture-primer.md before interviewing or writing architecture sections.</rule>
   <rule>MANDATORY when assembly is discussed: Read .agents/shared/golden-backend-assembly.md and .agents/shared/golden-frontend-assembly.md.</rule>
   <includes>repository shape, plugin contracts, architectural invariants, sibling forRoot, boundary classification, extension approaches, frontend assembly, context economy, verification baseline, harness_alignment, GRACE unique-tag for spec XML</includes>
 </architecture_primer>
@@ -104,7 +104,7 @@ UX cues (roadmap, progress markers, depth estimates, checkpoints) are TRANSPAREN
 </context_recovery_pass>
 
 <classify_boundary>
-<rule>After tier selection and optional context-recovery, BEFORE the decision-tree roadmap (Tier 2/3) or Architecture Sketch (Tier 1), walk CLASSIFY_BOUNDARY from .vvoc/overlays/repo-runtime.md. Record the result in the spec &lt;architecture&gt; section as an explicit sentence: domain-only | app-assembly | platform-extension | cross-cutting.</rule>
+<rule>After tier selection and optional context-recovery, BEFORE the decision-tree roadmap (Tier 2/3) or Architecture Sketch (Tier 1), walk CLASSIFY_BOUNDARY from .dsh/overlays/repo-runtime.md. Record the result in the spec &lt;architecture&gt; section as an explicit sentence: domain-only | app-assembly | platform-extension | cross-cutting.</rule>
 <rule>Ask ONE question: which boundary class applies. Recommend from codebase evidence. The user confirms or overrides.</rule>
 <rule>If the answer is domain-only, treat any later proposal that edits packages/platform/* as a spec contradiction — stop and re-open the boundary question.</rule>
 <rule>New @domains/&lt;slug&gt; product or apps/&lt;slug&gt; MUST plan bun scripts/scaffold-product.ts. Do not design hand-written wiring.</rule>
@@ -140,7 +140,7 @@ UX cues (roadmap, progress markers, depth estimates, checkpoints) are TRANSPAREN
 <spec_document_format>
 <rule>Load the spec template from references/spec-template.xml. Fill every element with the decisions confirmed during the interview.</rule>
 <rule>Do not invent new elements beyond what the template defines. The template IS the contract.</rule>
-<rule>Unique-tag (mandatory for NEW spec packages): repeating entities use unique tag names — C-&lt;Id&gt; for components, M-&lt;Id&gt; for pseudocode modules, NG-&lt;Id&gt; for non-goals. Identity lives in the tag name. Details stay in child elements. No XML attributes. Once-per-parent wrappers (spec, goal, architecture, components, pseudocode, testing, non-goals) stay generic. Follow .agents/skills/grace-explainer/references/unique-tag-convention.md as applied in .vvoc/overlays/repo-runtime.md.</rule>
+<rule>Unique-tag (mandatory for NEW spec packages): repeating entities use unique tag names — C-&lt;Id&gt; for components, M-&lt;Id&gt; for pseudocode modules, NG-&lt;Id&gt; for non-goals. Identity lives in the tag name. Details stay in child elements. No XML attributes. Once-per-parent wrappers (spec, goal, architecture, components, pseudocode, testing, non-goals) stay generic. Follow .agents/skills/grace-explainer/references/unique-tag-convention.md as applied in .dsh/overlays/repo-runtime.md.</rule>
 <rule>Do not rewrite an existing approved or archived spec to unique-tag unless that package is already being rewritten. If continuing a draft that already uses generic &lt;component&gt;/&lt;module&gt; wrappers, keep that package consistent and do not mix styles.</rule>
 <rule>The &lt;pseudocode&gt; section is a top-level spec element alongside components, data-flow, and error-handling. Each module within it is an M-&lt;Id&gt; tag with: name (child), context (one-line prose description), logic (structured pseudo-code), and edge-cases (pseudo-code for boundary conditions).</rule>
 <rule>For Tier 1 (sketch): the pseudocode section IS the primary artifact. Prose sections (goal, architecture, non-goals) are minimal wrappers. Components, data-flow, error-handling, and testing may be left empty or filled with brief summaries — the pseudo-code carries the design.</rule>
@@ -204,6 +204,6 @@ UX cues (roadmap, progress markers, depth estimates, checkpoints) are TRANSPAREN
 </handoff>
 
 <task>
-Your current task is the ongoing user request. First, determine the complexity tier and confirm it with the user. Then walk CLASSIFY_BOUNDARY from .vvoc/overlays/repo-runtime.md and record it in architecture. Then follow the tier-specific interview flow: Architecture Sketch Mode for Tier 1, full decision tree for Tier 2/3. Propose approaches, present a design. Load the spec template from references/spec-template.xml and fill every element with confirmed decisions using unique tags for repeating entities. For Tier 1, the pseudocode section is the primary artifact — prose sections are minimal context. Save to .vvoc/specs/&lt;id&gt;/spec.xml, where &lt;id&gt; is YYYY-MM-DD-&lt;slug&gt; using the current date at spec creation time; this prefix must be date-only, with no time, timezone, or full timestamp. Save as XML with document status draft. Optionally create .vvoc/specs/&lt;id&gt;/design-context.xml for complex sessions (skip for Tier 1 unless user requests it). After explicit user approval, update the saved spec status to approved. Stop before any implementation or planning.
+Your current task is the ongoing user request. First, determine the complexity tier and confirm it with the user. Then walk CLASSIFY_BOUNDARY from .dsh/overlays/repo-runtime.md and record it in architecture. Then follow the tier-specific interview flow: Architecture Sketch Mode for Tier 1, full decision tree for Tier 2/3. Propose approaches, present a design. Load the spec template from references/spec-template.xml and fill every element with confirmed decisions using unique tags for repeating entities. For Tier 1, the pseudocode section is the primary artifact — prose sections are minimal context. Save to .vvoc/specs/&lt;id&gt;/spec.xml, where &lt;id&gt; is YYYY-MM-DD-&lt;slug&gt; using the current date at spec creation time; this prefix must be date-only, with no time, timezone, or full timestamp. Save as XML with document status draft. Optionally create .vvoc/specs/&lt;id&gt;/design-context.xml for complex sessions (skip for Tier 1 unless user requests it). After explicit user approval, update the saved spec status to approved. Stop before any implementation or planning.
 </task>
 </skill>
