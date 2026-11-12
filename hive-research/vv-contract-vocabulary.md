@@ -279,10 +279,15 @@ Tool: **`spec_guard_approve`** (new, in dsh-vv-spec-guard; registered alongside
   top-level `<status>` is `approved` before recording; otherwise it returns a
   typed refusal (`status must be approved`).
 - `spec_guard_lint` checks (package mode and single-file mode):
-  - status `approved`/`applied` + sidecar entry present + digest matches → ok;
+  - status `approved` + sidecar entry present + digest matches → ok;
   - entry present, digest mismatch → **error `stale-approval`**:
     "STALE APPROVAL: <artifact> changed after approval (recorded <prefix>,
     current <prefix>) — re-approval required";
+  - status `applied` is never reported stale: reaching `applied` is the
+    executor's own mark-applied flip of the lifecycle status — execution
+    consumed the clearance, and the package is archived right after. The digest
+    guards the approved→execution window only (post-application content edits
+    are outside the approval guard);
   - status approved/applied, no entry → **warning `approval-unverified`**
     (backward compatible with pre-existing packages).
 - **[S]** Skill changes: vv-spec / vv-plan, immediately after setting status to
