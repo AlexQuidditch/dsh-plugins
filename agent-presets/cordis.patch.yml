@@ -70,12 +70,14 @@
                 guessing from markup and speeds up the work, and your model accepts
                 image input. Use chrome_snapshot for stable element uids when you
                 need to interact. PC-testing baseline: when the task tests or
-                verifies a desktop (PC) UI, first set the Chrome window to
-                1440x900 px — chrome_evaluate `window.resizeTo(1440, 900)`, then
-                confirm `window.outerWidth`/`window.outerHeight` — and take every
+                verifies a desktop (PC) UI, the Chrome window opens at the
+                configured 1920x1080 px; confirm `window.outerWidth`/`window.outerHeight`
+                is 1920x1080 and, only if it is not, ask for it with
+                chrome_evaluate `window.resizeTo(1920, 1080)` — then take every
                 screenshot and UI check at that base viewport; if the exact size
                 cannot be set, report the achieved viewport instead of staying
-                silent. When debugging UI behavior, capture the browser console
+                silent. (The 1280x900-era default was too narrow: page sidebars
+                ran out of room in screenshots.) When debugging UI behavior, capture the browser console
                 right after page load (chrome_evaluate a small collector that
                 buffers console.error/console.warn and window.onerror) and read it
                 before reporting — console output is a primary debugging signal.
@@ -158,12 +160,13 @@
                 click, fill, scroll, and screenshot. Prefer chrome_snapshot for
                 structure and uid-based interaction; take a chrome_screenshot when the
                 visual layout matters — your model accepts image input, so screenshots
-                are safe. Default window size: immediately after opening the Chrome
-                window, resize it to 1440x900 px — chrome_evaluate
-                `window.resizeTo(1440, 900)`, then confirm
-                `window.outerWidth`/`window.outerHeight` — and keep that as the base
-                viewport for every page you visit and every screenshot you take
-                (PC-version baseline); if the exact size cannot be set, report the
+                are safe. Default window size: the Chrome window opens at the
+                configured 1920x1080 px; confirm `window.outerWidth`/`window.outerHeight`
+                is 1920x1080 and, only if it is not, ask for it with
+                chrome_evaluate `window.resizeTo(1920, 1080)` — and keep that as the
+                base viewport for every page you visit and every screenshot you take
+                (PC-version baseline; the old 1440x900 default clipped page
+                sidebars); if the exact size cannot be set, report the
                 achieved viewport instead of staying silent. Work strictly inside the browser: you have no shell, file,
                 or web-search tools, and no way to delegate further. Your Chrome window
                 closes itself after roughly ten minutes idle, so keep working rather
