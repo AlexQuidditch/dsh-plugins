@@ -1,6 +1,10 @@
-# vv Contract Vocabulary — hive-derived practices, adapted
+# vv Contract Vocabulary — hive-derived practices, adopted
 
-Status: normative for the hive-adoption work (Wave 1 skills + Wave 2 plugins).
+Status: IMPLEMENTED 2026-11-13 (commits 0d9fd68…24074f5). Wave 1 [S]: all four
+vv-* skills. Wave 2 [G]: dsh-vv-spec-guard 0.2.0 (spec_guard_approve,
+spec_guard_evidence, receipt gates, classifyPlanRisk; 79/79 activation checks).
+Wave 2 [P]: dsh-vv-panel 0.2.0 (live state chip via workspaceFiles Remote +
+honest fallback). Live-tool verification pending a `dsh web` restart.
 Source analysis: `hive-research/hive-practices-analysis.md` (fact-checked against
 `/tmp/hive-analysis`, see verification notes inline). Every contract below is the
 **vv adaptation** — names, formats, and file paths here are what skills and plugin
