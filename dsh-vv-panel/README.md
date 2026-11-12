@@ -43,7 +43,7 @@
 | `ready-to-execute` | `plan.xml` `approved`, `receipts.jsonl` отсутствует/пуст |
 | `executing` | `plan.xml` `approved`, `receipts.jsonl` непустой |
 | `applied` | `plan.xml` `status=applied` |
-| `stale-approval` | `approvals.json` содержит запись для `spec.xml`/`plan.xml`, чей `sha256` не совпадает с текущими байтами файла — **переопределяет любое другое состояние** (§K) |
+| `stale-approval` | `approvals.json` содержит запись для `spec.xml`/`plan.xml`, чей `sha256` не совпадает с текущими байтами файла — **переопределяет любое другое состояние** (§K). Проверяется только статус `approved`: `applied` — легальный флип executor'а после исполнения, а не устаревание |
 | `archived` | пакет в `.vvoc/specs/archive/` — такие каталоги исключаются из выбора активного |
 | `no-package` | `.vvoc/specs/` отсутствует или в нём нет неархивных каталогов |
 

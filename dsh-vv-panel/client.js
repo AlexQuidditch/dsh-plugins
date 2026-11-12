@@ -140,7 +140,14 @@ window.__ModuleLoader__.load({
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     }
 
-    /** The first artifact whose recorded approval digest no longer matches its bytes. */
+    /**
+     * The first artifact whose recorded approval digest no longer matches its bytes.
+     *
+     * Only the `approved` window is checked: the recorded digest pins the bytes
+     * the operator approved, and reaching `applied` is the executor's own
+     * lifecycle flip (mark-applied) — the clearance was consumed by execution.
+     * Byte-checking the applied state would flag every executed package as stale.
+     */
     async function staleArtifact(input, specStatus, planStatus) {
       const candidates = [
         ['spec.xml', specStatus],
@@ -149,7 +156,7 @@ window.__ModuleLoader__.load({
       for (const pair of candidates) {
         const artifact = pair[0];
         const status = pair[1];
-        if (status !== 'approved' && status !== 'applied') continue;
+        if (status !== 'approved') continue;
         const entry = lastApproval(input.approvalsText, artifact);
         if (entry === undefined) continue;
         const bytes = artifact === 'spec.xml' ? input.specBytes : input.planBytes;
