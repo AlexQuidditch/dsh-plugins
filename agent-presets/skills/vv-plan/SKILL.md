@@ -1,6 +1,6 @@
 ---
 name: vv-plan
-description: Use AFTER an approved spec exists in .vvoc/specs/<id>/spec.xml — reads the approved spec and optional sibling design-context.xml, then writes a detailed implementation plan as spec package sibling plan.xml
+description: Use AFTER an approved spec exists in .vvoc/specs/<id>/spec.xml — reads the approved spec and optional sibling design-context.xml, writes a detailed implementation plan as spec package sibling plan.xml, lints it for risk, reviews it with the adversarial lens when required, and records digest-bound approval
 ---
 
 <skill vv-plan>
@@ -194,17 +194,45 @@ export class CacheStore&lt;T&gt; {
 <check>Verification: Is &lt;meta&gt;&lt;verify_overlay_profile&gt; set (or intentionally defaulting to baseline)? Does closeout use ./scripts/verify-overlay.sh &lt;that-profile&gt;? Are task-local commands concrete (no "run the tests")?</check>
 </self_review>
 
+<plan_lint>
+<rule>After saving the draft plan, run `spec_guard_lint` on the spec package (.vvoc/specs/&lt;id&gt;/). It covers plan.xml and its sibling spec.xml.</rule>
+<rule>Report the risk level and risk reasons to the user at the approval gate. Never hide a mandatory risk.</rule>
+<rule>When the risk level is mandatory, tell the user an adversarial plan review is required before approval and run it (plan_review). When spec_guard_lint is unavailable, say so explicitly and fall back to the self-review checklist plus the declared file paths.</rule>
+<rule>Re-run the lint after every inline fix and before the approval gate.</rule>
+</plan_lint>
+
+<plan_review>
+<trigger>Run the plan-level review BEFORE asking for approval when spec_guard_lint reports risk mandatory, or the spec is Tier 3 (formal), or the user requests it. Treat the package as Tier 3 when the spec or the session declares formal/level 3, or the change touches payments, permissions, migrations, or auth (vv-spec's formal-tier definition); never infer a lower tier.</trigger>
+<rule>Dispatch two reviewer subagents on the draft plan (reviewer subagents are allowed here; implementers are not):
+  - Primary reviewer: checks spec coverage and contract completeness — it may reuse the self_review checks as its brief.
+  - Adversarial reviewer: a DIFFERENT brief per the vv-review adversarial lens — no checklist, no skill; hidden contradictions, unsafe assumptions, rollback gaps, and how the plan could look complete yet fail in production.
+</rule>
+<rule>Dispatch the adversary on a different provider family than the primary reviewer (the subagent tool accepts provider and model parameters; families in this deployment include deepseek, zai/glm, openrouter/qwen, anthropic, openai). If per-call routing is unavailable or only one family is reachable, dispatch on the available route and declare the degradation: Independence: verified, degraded:same_family, or degraded:unknown_family. Never silently imitate a second opinion.</rule>
+<rule>Every reviewer prompt carries the vv-review bounded-work contract (2 inspection rounds, about 32 KB read budget, about a 400-line single-file cap, third response writes the report, no repository-wide searches) and the headless status envelope. Every report ends with the coverage ledger.</rule>
+<rule>Triage the findings through the vv-review contract: verify every anchor with spec_guard_evidence (or a sed byte-compare) and reject failed anchors as REJECTED_EVIDENCE; safe_auto findings are fixed inline, then spec_guard_lint is re-run; gated_auto and manual findings are presented to the user at the approval gate as decision dossiers in the vv-review format; fyi findings are reported and never block.</rule>
+<rule>Revision rounds: Tier 1-2 (sketch/standard): 1; Tier 3 (formal): 3; plus 1 operator-decision round on top. Budget exhaustion is reported with a closed reason code, never silently.</rule>
+<rule>Record the review under .vvoc/specs/&lt;id&gt;/reviews/; deferred items go to reviews/deferred-findings.md and operator grants to reviews/grants.md.</rule>
+</plan_review>
+
+<approval_digest>
+<rule>Immediately after the user approves and the saved plan status is set to &lt;status&gt;approved&lt;/status&gt;, call `spec_guard_approve` on plan.xml (tool from dsh-vv-spec-guard) and report the recorded digest prefix to the user.</rule>
+<rule>If spec_guard_approve is unavailable, say so explicitly in the approval message (approval-unverified). Never claim a digest-bound approval that did not happen.</rule>
+<rule>After any post-approval edit of plan.xml, setting the status back to draft is NOT enough: the file must be re-approved and spec_guard_approve re-run. The recorded digest is what makes stale edits detectable, so an edited approved plan without a fresh approval is a stale-approval error at execution.</rule>
+</approval_digest>
+
 <execution_handoff>
 <rule>Save the plan to .vvoc/specs/&lt;id&gt;/plan.xml with top-level status draft.</rule>
-<rule>After saving, present the plan file path and ask the user to read/review the plan and explicitly approve it. Do NOT offer execution until the user approves the plan.</rule>
-<rule>If the user requests changes, keep the plan status as draft, make the changes, re-run self-review, save the updated plan, and ask for approval again.</rule>
-<rule>After explicit user approval, update the saved plan file so the top-level status is &lt;status&gt;approved&lt;/status&gt;.</rule>
+<rule>After saving, run `spec_guard_lint` on the package and report its risk level and reasons. When plan_review triggers, dispatch the plan-level review BEFORE asking for approval.</rule>
+<rule>Then present the plan file path, the lint risk level and reasons, and any decision dossiers, and ask the user to read/review the plan and explicitly approve it. Do NOT offer execution until the user approves the plan.</rule>
+<rule>If the user requests changes, keep the plan status as draft, make the changes, re-run self-review and spec_guard_lint, save the updated plan, and ask for approval again.</rule>
+<rule>After explicit user approval, update the saved plan file so the top-level status is &lt;status&gt;approved&lt;/status&gt;, then call spec_guard_approve on plan.xml and report the recorded digest prefix (or state approval-unverified explicitly when the tool is unavailable — see approval_digest).</rule>
+<rule>Any post-approval edit to plan.xml restarts the approval path: set the status back to draft, make the edit, re-run self-review and spec_guard_lint, re-run the plan review when it still triggers, re-approve, and re-run spec_guard_approve. A status flip alone does not refresh the digest.</rule>
 <rule>The execution model is fixed, not a menu: an approved plan is executed by vv-execute, whose controller role derives the execution manifest, gates it with the user, and spawns a dedicated executor managed session (session_spawn) that implements the tasks with subagents, verifies acceptance criteria, commits per task, and archives the package. This handoff is the only path this skill offers.</rule>
-<rule>Never dispatch implementation subagents (vv-implementer, reviewers, waves) from this planning session, and never present same-session implementation as an option — it exists only inside vv-execute as an emergency degraded mode for when session_spawn is unavailable, gated there on explicit user approval. When the user asks how execution will run, state it: in a dedicated managed session via vv-execute.</rule>
-<rule>After marking the plan approved, tell the user execution runs in a dedicated managed session via vv-execute and ask whether to start vv-execute now. If the user confirms, load the vv-execute skill (controller role) in this session — it will handle the manifest gate and spawn the executor. If the user defers, they can start vv-execute later (for example with the vv-execute panel button). Do NOT start implementation yourself.</rule>
+<rule>Never dispatch implementation subagents (vv-implementer, waves) from this planning session. Dispatching REVIEWER subagents is allowed only for the plan-level review in plan_review; never dispatch implementers. Never present same-session implementation as an option — it exists only inside vv-execute as an emergency degraded mode for when session_spawn is unavailable, gated there on explicit user approval. When the user asks how execution will run, state it: in a dedicated managed session via vv-execute.</rule>
+<rule>After marking the plan approved and recording the digest, tell the user execution runs in a dedicated managed session via vv-execute and ask whether to start vv-execute now. If the user confirms, load the vv-execute skill (controller role) in this session — it will handle the manifest gate and spawn the executor. If the user defers, they can start vv-execute later (for example with the vv-execute panel button). Do NOT start implementation yourself.</rule>
 </execution_handoff>
 
 <task>
-Your current task is the ongoing user request. Read .dsh/overlays/repo-runtime.md first. Read the approved spec at .vvoc/specs/&lt;id&gt;/spec.xml and verify its top-level status is approved. Check whether a sibling design-context.xml exists; if so, read it as explanatory context only (it does NOT override spec.xml). Load the plan template from references/plan-template.xml, populate &lt;spec&gt; and optionally &lt;design-context&gt; paths, map the architecture with unique M-&lt;Id&gt; tags, write detailed unique-tag tasks (T-NNN, AC-NNN, wave-N, dep-T-NNN) with GRACE headers in new-file snippets, apply self-review, save the plan as .vvoc/specs/&lt;id&gt;/plan.xml with top-level status draft, ask the user to read/review and explicitly approve the plan, update the saved plan status to approved after approval, and then hand off to vv-execute — asking the user whether to start it now — with the fixed execution model in mind: an approved plan is always executed in a dedicated managed session spawned by vv-execute via session_spawn, never implemented in this session.
+Your current task is the ongoing user request. Read .dsh/overlays/repo-runtime.md first. Read the approved spec at .vvoc/specs/&lt;id&gt;/spec.xml and verify its top-level status is approved. Check whether a sibling design-context.xml exists; if so, read it as explanatory context only (it does NOT override spec.xml). Load the plan template from references/plan-template.xml, populate &lt;spec&gt; and optionally &lt;design-context&gt; paths, map the architecture with unique M-&lt;Id&gt; tags, write detailed unique-tag tasks (T-NNN, AC-NNN, wave-N, dep-T-NNN) with GRACE headers in new-file snippets, apply self-review, save the plan as .vvoc/specs/&lt;id&gt;/plan.xml with top-level status draft, run spec_guard_lint and report the risk level and reasons, run the plan-level review with the adversarial lens when risk is mandatory or the spec is Tier 3 (triage anchored findings; fix safe_auto inline and re-run lint; keep gated_auto and manual findings for the approval gate as decision dossiers), ask the user to read/review and explicitly approve the plan, update the saved plan status to approved after approval, call spec_guard_approve on plan.xml and report the digest prefix (or state approval-unverified when the tool is unavailable), and then hand off to vv-execute — asking the user whether to start it now — with the fixed execution model in mind: an approved plan is always executed in a dedicated managed session spawned by vv-execute via session_spawn, never implemented in this session.
 </task>
 </skill>
