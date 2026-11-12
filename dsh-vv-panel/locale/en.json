@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "VV Composer Panel",
-    "description": "Buttons under the composer that auto-run the six vv-* skills (spec, plan, execute, review, reflect, handoff) in vv-controller sessions."
+    "description": "Buttons under the composer that auto-run the six vv-* skills (spec, plan, execute, review, reflect, handoff) in vv-controller sessions, plus an operational-state chip derived from .vvoc/specs/ through the Host workspace read remote."
   }
 }
