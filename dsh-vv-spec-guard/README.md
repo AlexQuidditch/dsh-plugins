@@ -5,7 +5,7 @@
 ## Что делает
 
 - **Линтер** (`lib/lint.js`, чистый, без зависимостей): well-formed XML, статусы `draft|approved|applied`, уникальные идентичности `<COMPONENT-UPPER-KEBAB>` / `<TASK-T-NNN>` / `<WAVE-N>`, ссылки волн и `depends_on`, циклы зависимостей, полнота approved-документов, правило «компоненты плана ⊆ компонентам спеки».
-  - **§K**: для approved/applied артефакта сверяет записанный digest с текущим — error `stale-approval` (правка после одобрения) или warning `approval-unverified` (записи нет; backward-compatible для старых пакетов).
+  - **§K**: для артефакта в статусе `approved` сверяет записанный digest с текущими байтами — error `stale-approval` (правка после одобрения) или warning `approval-unverified` (записи нет; backward-compatible для старых пакетов). Статус `applied` digest не проверяет: переход approved→applied — собственный флип executor'а (mark-applied), исполнение потребило clearance, а контентные правки applied-пакета вне окна guard'а (пакет терминален и сразу архивируется).
   - **§L**: для applied-плана (или при `checkReceipts: true`) требует по receipts-записи с `exit_code: 0` на каждую verification-команду — error `receipt-missing` / `receipt-failed`.
 - **§N risk-классификатор** (`classifyPlanRisk`, `lib/lint.js`): по сырому тексту plan.xml выдаёт `standard | mandatory` + причины; хост печатает строку `risk: standard` или `risk: mandatory (<category>: <evidence>)` после вердикта plan.xml.
 - **Тул `spec_guard_lint`** для модели: путь к `spec.xml`/`plan.xml` или к пакету `.vvoc/specs/YYYY-MM-DD-<slug>/` — вердикт (для plan.xml подхватывается sibling spec.xml, sidecar-файлы пакета читаются хостом). Путь можно давать абсолютным или относительным: относительный разрешается от текущего рабочего каталога сессии (`fs.resolve(path, { cwd })`).
@@ -33,7 +33,7 @@
 ```
 
 - Тул пишет digest только если top-level status артефакта — `approved`; иначе типизированный отказ `status must be approved, found X` и файл не меняется.
-- `spec_guard_lint` (в режиме пакета и одиночного файла): status `approved`/`applied` + digest совпал → ok; digest не совпал → **error `stale-approval`**; записи нет → **warning `approval-unverified`**.
+- `spec_guard_lint` (в режиме пакета и одиночного файла): status `approved` + digest совпал → ok; digest не совпал → **error `stale-approval`**; записи нет → **warning `approval-unverified`**. Статус `applied` сверкой digest не считается устаревшим: approved→applied — легальный флип executor'а, исполнение потребило очистку (см. §K выше).
 - `stale-approval` — жёсткий стоп для vv-execute: артефакт менялся после одобрения, нужно повторное `spec_guard_approve`.
 
 ### `receipts.jsonl` (§L)

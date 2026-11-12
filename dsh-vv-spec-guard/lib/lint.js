@@ -141,17 +141,30 @@ function malformed(verdict, error) {
     return verdict;
 }
 /**
- * §K: compare an approved/applied artifact against its sidecar-recorded digest.
+ * §K: compare an artifact against its sidecar-recorded approval digest.
  *
- * A mismatch is an error (a hard stop for vv-execute); an approved artifact
- * with no recorded digest is a warning for backward compatibility with
- * packages created before approvals.json existed.
+ * The digest pins the bytes the operator approved, so the mismatch check runs
+ * while the artifact is still `approved` — that is the window execution reads
+ * it in, and a content edit there must hard-stop vv-execute. Reaching
+ * `applied` is the executor's own mark-applied flip of the lifecycle status:
+ * execution consumed the clearance, the only legal byte change after approval
+ * is that flip, and the package is archived right after. Applying the byte
+ * check to `applied` would therefore flag every successfully executed package
+ * as stale, so it is skipped there; post-application content edits are outside
+ * the approval guard (the package is terminal and archived).
+ *
+ * An approved/applied artifact with no recorded digest is a warning for
+ * backward compatibility with packages created before approvals.json existed.
  */
 function checkApproval(verdict, artifact, status, options) {
     if (status !== 'approved' && status !== 'applied')
         return;
     const recorded = options.approval?.sha256.trim().toLowerCase();
     if (recorded !== undefined && recorded !== '') {
+        // The clearance is consumed by execution: only the `approved` window is
+        // byte-checked (see the rationale above).
+        if (status !== 'approved')
+            return;
         const current = options.currentSha256?.trim().toLowerCase();
         if (current === undefined || current === '')
             return;

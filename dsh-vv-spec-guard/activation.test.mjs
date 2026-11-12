@@ -145,6 +145,13 @@ check('stale-approval: spec covered too', lintSpec('<spec package="p" status="ap
   approval: { sha256: SHA_A },
   currentSha256: SHA_B,
 }).errors.some((error) => error.rule === 'stale-approval'))
+// Reaching `applied` is the executor's own lifecycle flip: the clearance was
+// consumed by execution, so an applied artifact is never "stale" against the
+// digest recorded while it was approved.
+check('stale-approval: applied consumes the clearance (no false stale)', !lintPlan(
+  APPROVED_PLAN_EMPTY.replace('approved', 'applied'),
+  { approval: { sha256: SHA_A }, currentSha256: SHA_B },
+).errors.some((error) => error.rule === 'stale-approval'))
 // vv templates (unique-tag format) carry status as a direct child element.
 // Their element vocabulary differs, so legacy structural rules stay quiet and
 // only the format-agnostic §K/§L checks apply.
@@ -378,19 +385,17 @@ try {
   const unverifiedLint = await lintTool.execute({ path: workDir })
   check('lint wiring: no sidecar → approval-unverified warning', unverifiedLint.includes('[approval-unverified]'))
 
-  // §L-обвязка линта: applied-план требует receipts.
+  // §L-обвязка линта: applied-план требует receipts. Digest записывается на
+  // approved-байтах (как в реальном flow), затем executor сам флипает статус
+  // в applied — это легальная смена байтов, stale-approval быть не должно.
+  writeFileSync(join(workDir, 'spec.xml'), '<spec package="2026-09-09-tools" status="approved"></spec>')
+  writeFileSync(join(workDir, 'plan.xml'), approvedPlan)
+  await approveTool.execute({ path: workDir })
   const appliedPlan = approvedPlan.replace('status="approved"', 'status="applied"')
   writeFileSync(join(workDir, 'plan.xml'), appliedPlan)
-  writeFileSync(join(workDir, 'approvals.json'), `${JSON.stringify({
-    approvals: [{
-      artifact: 'plan.xml',
-      sha256: digestOf('plan.xml'),
-      status_at_approval: 'applied',
-      approved_at: new Date().toISOString(),
-    }],
-  }, null, 2)}\n`)
   const missingReceiptLint = await lintTool.execute({ path: workDir })
   check('lint wiring: applied plan without receipts → receipt-missing', missingReceiptLint.includes('[receipt-missing]'))
+  check('lint wiring: approved→applied flip is not stale-approval', !missingReceiptLint.includes('[stale-approval]'))
   writeFileSync(join(workDir, 'receipts.jsonl'), '{"task_id":"T-001","command":"pnpm test","exit_code":1,"provenance":"executor"}\n')
   const failedReceiptLint = await lintTool.execute({ path: workDir })
   check('lint wiring: exit 1 receipt → receipt-failed', failedReceiptLint.includes('[receipt-failed]'))
