@@ -8,4 +8,6 @@
     config:
       enabled: true
       probeTool: true
+      approveTool: true
+      evidenceTool: true
       verdictMaxChars: 200

@@ -1,8 +1,8 @@
 {
   "name": "dsh-vv-spec-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "DSH plugin bundle: vv SpecGuard — deterministic lint of .vvoc spec/plan XML artifacts, logger verdicts on fs observation, and a spec_guard_lint probe tool",
+  "description": "DSH plugin bundle: vv SpecGuard — deterministic lint of .vvoc spec/plan XML artifacts with digest-bound approvals (spec_guard_approve), verification-receipt gates, byte-exact evidence anchors (spec_guard_evidence), and a deterministic plan risk classifier",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
