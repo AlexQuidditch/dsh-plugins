@@ -49,9 +49,19 @@ check('module: inject declares slots + locale', Array.isArray(moduleExports.inje
 const locales = new Map()
 const registrations = []
 const binds = []
+let injectedDeps
+let remoteDisposer
+const remoteChild = { remote: { workspaceFiles: { list: async () => ({ ok: true, value: { entries: [] } }) } } }
 const ctx = {
   effect(callback) { callback(); return () => {} },
-  get() { return undefined },
+  // The proxied Client context forbids ctx.get() on undeclared services; the
+  // panel must never call it (the crash class that removed the toolbar).
+  get() { throw new Error('ctx.get must not be used: declare the service in ctx.inject') },
+  inject(deps, callback) {
+    injectedDeps = deps
+    remoteDisposer = callback(remoteChild)
+    return () => {}
+  },
   locale: {
     register(namespace, locale, dict) { locales.set(locale, { namespace, dict }) },
     bind(namespace) { binds.push(namespace); return (key) => key },
@@ -81,6 +91,14 @@ check('slot: component is a function', typeof registration.component === 'functi
 check('slot: props kit injected (vvT + vvRemote)', typeof registration.options.inject === 'function'
   && typeof registration.options.inject().vvT === 'function'
   && typeof registration.options.inject().vvRemote === 'function')
+
+// ── Host Remote: объявленный inject, а не ctx.get (класс краша панели) ───────
+check('remote: dynamic inject declares the dotted Remote services', Array.isArray(injectedDeps)
+  && injectedDeps.includes('remote') && injectedDeps.includes('remote.workspaceFiles'))
+check('remote: getter exposes the mounted face', registration.options.inject().vvRemote() === remoteChild.remote)
+check('remote: unmount disposes the face (fallback path stays honest)',
+  typeof remoteDisposer === 'function'
+  && (remoteDisposer(), registration.options.inject().vvRemote() === undefined))
 
 // ── §K: клиентская stale-семантика (только approved-окно) ────────────────────
 // Клиент выводит stale-approval по approvals.json. Проверяем, что в исходнике

@@ -1,6 +1,6 @@
 {
   "name": "dsh-vv-panel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "DSH web-client plugin: a compact control panel under the composer that auto-runs the six vv-* skills and shows the active .vvoc spec package's operational state in vv-controller sessions",

@@ -90,6 +90,16 @@ ctx.remote.workspaceFiles.list(sessionId, '.vvoc/specs', signal)
 ctx.remote.workspaceFiles.readBytes(sessionId, path, {}, signal)   // → Uint8Array
 ```
 
+- **Обязательный inject.** Клиентский ctx — прокси, который не отдаёт
+  undeclared-сервисы: `ctx.get('remote')` возвращает лицо, а доступ к
+  `face.workspaceFiles` бросает `cannot get property "remote.workspaceFiles"
+  without inject`. Этот throw приходит из React-effect и роняет весь slot-entry
+  — то есть исчезает вся панель, а не только state-чип (именно так панель
+  пропала в 0.2.0). Правильный паттерн (так делают все shipped client-плагины,
+  вызывающие Remote): динамический
+  `ctx.inject(['remote', 'remote.workspaceFiles'], (child) => ...)`, и лицо
+  живёт только пока Remote-строки смонтированы. Без лица чип честно уходит в
+  fallback-режим.
 - На провод уходит **только sessionId**: корень рабочей области Host выводит
   из заголовка сессии, клиент не может подменить или задать путь-корень.
 - Чтения read-only, ограничены по размеру и проверяются access-контролем

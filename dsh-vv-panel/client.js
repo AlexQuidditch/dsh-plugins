@@ -430,7 +430,7 @@ window.__ModuleLoader__.load({
             // The Web assembly may still be mounting its Remote faces during
             // boot; retry briefly before claiming the bridge is absent.
             if (attemptsLeft > 0) {
-              timer = setTimeout(() => run(attemptsLeft - 1), 400);
+              timer = setTimeout(() => run(attemptsLeft - 1), 500);
               return;
             }
             setScan({ kind: 'unavailable', reason: 'no-bridge' });
@@ -450,7 +450,10 @@ window.__ModuleLoader__.load({
               setScan({ kind: 'unavailable', reason: error && error.code ? String(error.code) : 'scan-failed' });
             });
         };
-        run(2);
+        // The dynamic `remote` injection may settle after this component's
+        // first render (the Remote rows mount asynchronously during boot), so
+        // retry for a few seconds before falling back to the canned prompt.
+        run(8);
         return () => {
           cancelled = true;
           if (timer) clearTimeout(timer);
@@ -530,10 +533,23 @@ window.__ModuleLoader__.load({
           ctx.effect(() => ctx.locale.register(NS, locale, dict), `vv-panel locale ${locale}`);
         }
         const t = ctx.locale.bind(NS);
-        // The Host Remote service is discovered lazily: the panel must render
-        // even when the Web assembly serves no Remote (chips fall back to the
-        // canned state prompt instead of claiming a state).
-        const remote = () => ctx.get('remote');
+
+        // The Host Remote face is OPTIONAL but must be declared before use.
+        // The proxied Client context refuses to hand out a Remote namespace the
+        // plugin did not inject — `ctx.get('remote')` returns a face whose
+        // `workspaceFiles` access throws "cannot get property
+        // \"remote.workspaceFiles\" without inject". That throw lands inside
+        // React's effect and takes the whole slot entry down, i.e. the chip row
+        // disappears. The supported pattern (every shipped client plugin that
+        // calls a Remote does this) is a dynamic injection of the dotted
+        // service, so the face only exists while the Remote rows are mounted;
+        // a missing face degrades the chip to the canned-prompt fallback.
+        let remoteFace;
+        ctx.inject(['remote', 'remote.workspaceFiles'], (child) => {
+          remoteFace = child.remote;
+          return () => { remoteFace = undefined; };
+        });
+        const remote = () => remoteFace;
 
         // One compact-controls entry in the composer tool row: right after
         // the permission selector, before the trailing Vision/model/send
