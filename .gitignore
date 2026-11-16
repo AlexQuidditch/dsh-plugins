@@ -7,3 +7,5 @@ node_modules/
 *.log
 .dsh-vision-router
 swarm-lab/
+.tmp/
+woolworths-research/
