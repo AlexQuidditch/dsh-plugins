@@ -1,8 +1,8 @@
 {
   "name": "dsh-peak-hours",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "DSH plugin bundle: one DeepSeek peak-hours surface — a header indicator with an \"allow work in peak hours\" switch, and the host gate that warns (soft) or blocks (hard) model calls in peak windows.",
+  "description": "DSH plugin bundle: model-aware peak-pricing hours for DeepSeek and GLM routes — a header indicator, a composer defer button, an automatic session pause that resumes at the window end, a working 'allow peak hours' override with a daily budget, a settings page for the schedules, and a peak_hours_status tool for the model.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -33,7 +33,16 @@
     "lib/client.js",
     "lib/schedule.js",
     "lib/schedule.d.ts",
-    "cordis.patch.yml"
+    "lib/session-tree.js",
+    "lib/state.js",
+    "lib/config.js",
+    "lib/stats.js",
+    "lib/pause.js",
+    "lib/gate.js",
+    "lib/defer.js",
+    "lib/context.js",
+    "cordis.patch.yml",
+    "CONTRACT.md"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -41,5 +50,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/schedule.test.mjs && node tests/state.test.mjs && node --test tests/pause.test.mjs && node --test tests/defer.test.mjs && node tests/client.test.mjs && node activation.test.mjs"
+  }
 }

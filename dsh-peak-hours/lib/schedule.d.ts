@@ -1,97 +1,129 @@
 /**
- * Pure peak-hour schedule engine — no cordis, no IO.
+ * Pure peak-hour schedule engine — type surface.
  *
  * Windows are HH:MM ranges in an explicit timezone (default UTC), may cross
  * midnight, and may be restricted to weekdays (0=Sunday..6=Saturday). Matching
- * is against PROVIDERS, not models, and every malformed entry fails open:
- * a broken window is reported and skipped, never a block.
+ * is against provider FAMILIES, not models, and every malformed entry fails
+ * open: a broken window is reported and skipped, never a block. An entry may
+ * override its windows/mode/discount for one exact model id or `*`.
  *
- * A schedule key names a provider FAMILY and also matches every variant route
- * of it: a config that says `deepseek` covers the runtime ids `deepseek`,
- * `deepseek-official` and `deepseek-vision`. An exact key always wins over a
- * family key, so one variant can still carry its own windows or mode.
+ * This is a declaration-only mirror of `lib/schedule.js`; it is not imported at
+ * runtime and exists for editor/type consumers.
  */
+
+/** Normalized holiday exclusion calendar attached to windows. */
+export interface HolidayCalendar {
+  /** Timezone the holiday dates are declared in; default Asia/Shanghai. */
+  tz: string
+  /** Inclusive [from, to] date ranges (YYYY-MM-DD), sorted. */
+  ranges: Array<[string, string]>
+}
+
+/** Raw holiday calendar accepted from config: dates, ranges, or both. */
+export type HolidayInput = string[] | {
+  tz?: string
+  dates?: string[]
+  ranges?: Array<[string, string]>
+}
+
 /** One peak window in a provider schedule. */
 export interface PeakWindow {
-    start: string;
-    end: string;
-    /** IANA or fixed-offset timezone; default 'UTC'. */
-    tz?: string;
-    /** Weekday restriction, 0=Sunday..6=Saturday; default all days. */
-    days?: number[];
+  start: string
+  end: string
+  /** IANA or fixed-offset timezone; default 'UTC'. */
+  tz?: string
+  /** Weekday restriction, 0=Sunday..6=Saturday; default all days. */
+  days?: number[]
+  /** Normalized by `normalizeSchedules` from the owning entry/model rule. */
+  holidays?: HolidayCalendar
 }
+
+/** Per-model override of a provider schedule; a full replacement, not a merge. */
+export interface PeakModelRule {
+  windows?: PeakWindow[]
+  holidays?: HolidayInput
+  /** Provider-level mode override. */
+  mode?: 'pause' | 'hard' | 'warn'
+  /** Share of the price saved by moving a call off-peak, 0..1. */
+  offPeakDiscount?: number
+}
+
 /** One provider's schedule. */
 export interface ProviderSchedule {
-    windows: PeakWindow[];
-    /** Provider-level mode override. */
-    mode?: 'soft' | 'hard';
+  windows: PeakWindow[]
+  models?: Record<string, PeakModelRule>
+  holidays?: HolidayInput
+  mode?: 'pause' | 'hard' | 'warn'
+  offPeakDiscount?: number
+  label?: string
 }
-/** The whole schedules map from bundle config. */
-export type PeakSchedules = Record<string, ProviderSchedule>;
+
+/** The whole schedules map from bundle config or the user state file. */
+export type PeakSchedules = Record<string, ProviderSchedule>
+
+/** Result of normalizing a raw schedules map. */
+export interface NormalizedSchedules {
+  schedules: PeakSchedules
+  warnings: string[]
+}
+
 /** A schedule entry together with the config key that supplied it. */
 export interface ResolvedSchedule {
-    /** The config key that matched — not necessarily the provider id. */
-    key: string;
-    schedule: ProviderSchedule;
+  key: string
+  schedule: ProviderSchedule
 }
+
+/** Effective windows/mode/discount for one provider+model. */
+export interface EffectiveSchedule {
+  key: string
+  providerSchedule: ProviderSchedule
+  modelKey?: string
+  windows: PeakWindow[]
+  mode?: 'pause' | 'hard' | 'warn'
+  offPeakDiscount: number
+  label: string
+}
+
 /** The resolved answer for one provider at one instant. */
 export interface PeakDecision {
-    /** Whether the provider is inside a peak window right now. */
-    inPeak: boolean;
-    /** HH:MM (UTC) of the window end when in peak. */
-    until?: string;
-    /** The config key whose schedule matched, when one did. */
-    matched?: string;
-    /** Malformed windows skipped while resolving (fail-open). */
-    broken: string[];
+  inPeak: boolean
+  until?: string
+  matched?: string
+  modelKey?: string
+  broken: string[]
 }
-/**
- * Resolve the schedule entry for a provider id.
- *
- * An exact key wins outright. Otherwise the LONGEST key that is a `-`-delimited
- * prefix of the id matches, so `deepseek` covers `deepseek-official` while a
- * more specific `deepseek-vision` entry would cover only that variant. A key
- * never matches a provider that merely shares a prefix without the separator
- * (`deep` must not match `deepseek`), and an unmatched provider is not an error:
- * the gate stays open, exactly like an unknown provider.
- */
-export declare function resolveSchedule(provider: string, schedules: PeakSchedules): ResolvedSchedule | undefined;
-/**
- * Decide whether `provider` is inside one of its configured peak windows at `now`.
- *
- * The wall clock of the provider's timezone decides day-of-week and
- * minute-of-day; windows that cross midnight also match the early-morning
- * hours of the next calendar day, and the weekday restriction always applies
- * to the evaluated instant's own day. Unknown providers and broken windows
- * are never a block.
- *
- * The schedule is located through {@link resolveSchedule}, so a family key
- * covers every variant route of the provider.
- */
-export declare function decidePeak(provider: string, now: Date, schedules: PeakSchedules): PeakDecision;
-/** Whether ONE window covers `now`. A malformed window covers nothing. */
-export declare function windowContains(window: PeakWindow, now: Date): boolean;
-/**
- * Seconds until the next boundary (any window's start or end) after `now`.
- *
- * Computed on the window's own wall clock, so a timezone offset never has to be
- * turned into an instant; a DST shift inside the countdown is ignored, which is
- * what an indicator wants (the authoritative decision stays {@link decidePeak}).
- * The scan crosses a weekend, and an all-broken set falls back to one day.
- */
-export declare function secondsToNextBoundary(windows: PeakWindow[], now: Date): number;
-/** The header-indicator view: which windows are open now and when that flips. */
+
+/** One provider/model's full view. */
 export interface PeakOverview {
-    /** Whether ANY configured window is open right now. */
-    peak: boolean;
-    /** `<HH:MM> <tz>` of the first open window's end, when peaking. */
-    until?: string;
-    /** Seconds until the peak status next flips. */
-    secondsToChange: number;
+  known: boolean
+  inPeak: boolean
+  matchedKey: string | null
+  modelKey: string | null
+  untilAt: Date | null
+  untilLabel: string | null
+  nextStartAt: Date | null
+  secondsToChange: number | null
+  offPeakDiscount?: number
+  mode?: 'pause' | 'hard' | 'warn'
 }
-/**
- * The header-indicator view: is ANY configured window open right now, and when
- * does that status next flip. One schedule drives both the pill and the gate,
- * so they can never disagree about what "peak" means.
- */
-export declare function peakOverview(now: Date, schedules: PeakSchedules): PeakOverview;
+
+export declare const DEFAULT_OFF_PEAK_DISCOUNT = 0.5
+export declare const HOLIDAY_TZ_DEFAULT = 'Asia/Shanghai'
+
+export declare function isTimeZone(tz: string): boolean
+export declare function normalizeSchedules(raw: unknown): NormalizedSchedules
+export declare function normalizeHolidays(raw: unknown): { holidays: HolidayCalendar | undefined; warnings: string[] }
+export declare function isHolidayInstant(instant: Date, holidays: HolidayCalendar | undefined): boolean
+export declare function resolveSchedule(provider: string, schedules: PeakSchedules): ResolvedSchedule | undefined
+export declare function resolveEffective(provider: string, model: string | null | undefined, schedules: PeakSchedules): EffectiveSchedule | undefined
+export declare function windowContains(window: PeakWindow, now: Date): boolean
+export declare function peakEndsAt(provider: string, model: string | null | undefined, now: Date, schedules: PeakSchedules): Date | null
+export declare function nextPeakStartAt(provider: string, model: string | null | undefined, now: Date, schedules: PeakSchedules): Date | null
+export declare function overviewFor(provider: string, model: string | null | undefined, now: Date, schedules: PeakSchedules): PeakOverview
+export declare function decidePeak(provider: string, now: Date, schedules: PeakSchedules): PeakDecision
+export declare function decidePeak(provider: string, model: string | null | undefined, now: Date, schedules: PeakSchedules): PeakDecision
+export declare function allWindows(schedules: PeakSchedules): Array<{ key: string; modelKey?: string; window: PeakWindow }>
+export declare function windowLabelFor(window: PeakWindow, locale?: string): string
+export declare function secondsToNextBoundary(windows: PeakWindow[], now: Date): number
+export declare function peakOverview(now: Date, schedules: PeakSchedules): { peak: boolean; until?: string; secondsToChange: number }
+export declare function scheduleKeys(schedules: PeakSchedules): string[]

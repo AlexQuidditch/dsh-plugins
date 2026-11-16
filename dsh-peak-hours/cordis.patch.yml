@@ -1,11 +1,23 @@
 # dsh-peak-hours bundle patch. Applied as a bundle layer (dsh.bundle.patch),
 # after dsh-base and dsh-web-app, before the user's profile cordis.patch.yml.
 #
-# ONE row drives both surfaces, so the header pill and the gate can never
-# disagree about what "peak" means: the pill renders this schedule, and the
-# `llm/stream` gate enforces it.
+# ONE row drives every surface — the header pill, the composer banner, the
+# defer button, the sidebar markers, the settings page, the `agent/pre-step`
+# pause controller, the `llm/stream` gate, the prompt context/tool and the
+# scheduled deferral — so they can never disagree about what "peak" means.
 #
 # A patch replaces a row's whole config, so every key is restated here.
+#
+# `mode`:
+#   pause — suspend agent steps inside a peak window and continue automatically
+#           when the window closes (default; needs the least attention);
+#   hard  — reject model calls with PEAK_HOURS_BLOCK (legacy behavior);
+#   warn  — only write a warning to the host log (old `soft`).
+#
+# `schedules`: keys name a provider FAMILY (exact provider ids win over a
+# `-`-delimited prefix). An entry may also carry `models: { <model-id>|'*': {
+# windows, mode, offPeakDiscount } }` to override the family windows for one
+# exact model route.
 #
 # DeepSeek peak pricing per the pricing page: 01:00-04:00 and 06:00-10:00 UTC,
 # Monday-Friday (0=Sunday..6=Saturday). Drop `days` to gate every calendar day.
@@ -19,25 +31,50 @@
 # NOTE: the plan's 庆双节 campaign (2026-09-25 … 2026-10-07) bills EVERY hour at
 # the off-peak rate, so until it ends the GLM entry matches nothing — that is
 # the campaign, not a broken schedule.
-#
-# `mode: soft` warns in the host log; `hard` rejects the call with
-# PEAK_HOURS_BLOCK. Either way the user can suspend the gate from the header
-# indicator ("Разрешить работу в peak hours"), and that choice persists under
-# the DSH home.
 - insert:
   - id: peak-hours
     name: "dsh-peak-hours"
     config:
       enabled: true
-      mode: soft
+      mode: pause
+      pause:
+        strategy: auto        # auto | hold | requeue
+        maxHoldMinutes: 20    # longer remaining windows requeue instead of holding
+        checkpoint: true      # flush the session before a pause
+      allowPeak: false        # global default: peak work is NOT allowed
+      dailyLimitMinutes: 30   # peak-allowed conversation minutes per day; null = unlimited
+      prePeakWarningMinutes: 10
+      backgroundPolicy: allow # session-title / compaction / auto-review during peak: allow|warn|block
       schedules:
         # Family key: covers `deepseek`, `deepseek-official`, `deepseek-vision`.
+        # Pricing page: peak 01:00-04:00 and 06:00-10:00 UTC, Mon-Fri, EXCLUDING
+        # Chinese public holidays; all other hours (weekends included) are
+        # off-peak at half the peak rate.
         deepseek:
           windows:
             - { start: "01:00", end: "04:00", tz: "UTC", days: [1, 2, 3, 4, 5] }
             - { start: "06:00", end: "10:00", tz: "UTC", days: [1, 2, 3, 4, 5] }
+          offPeakDiscount: 0.5
+          # 国务院办公厅 国办发明电〔2025〕7号 (2026-й год), evaluated in China time.
+          # Обновляйте список раз в год; удобнее через Настройки → Пиковые часы.
+          holidays:
+            tz: "Asia/Shanghai"
+            ranges:
+              - ["2026-01-01", "2026-01-03"]   # 元旦
+              - ["2026-02-15", "2026-02-23"]   # 春节
+              - ["2026-04-04", "2026-04-06"]   # 清明节
+              - ["2026-05-01", "2026-05-05"]   # 劳动节
+              - ["2026-06-19", "2026-06-21"]   # 端午节
+              - ["2026-09-25", "2026-09-27"]   # 中秋节
+              - ["2026-10-01", "2026-10-07"]   # 国庆节
+          # Example model-level override (commented out by default):
+          # models:
+          #   deepseek-reasoner:
+          #     windows:
+          #       - { start: "00:30", end: "10:30", tz: "UTC", days: [1, 2, 3, 4, 5] }
         # Family key: the GLM routes behind the `zai` provider (glm-5.3,
         # glm-5.3-flash, and any `zai-*` variant added later).
         zai:
           windows:
             - { start: "14:00", end: "18:00", tz: "Asia/Shanghai", days: [1, 2, 3, 4, 5] }
+          offPeakDiscount: 0.5
