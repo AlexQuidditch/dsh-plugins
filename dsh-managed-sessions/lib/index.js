@@ -363,13 +363,29 @@ export function apply(ctx, input = {}) {
     let provider = providerArg
     let model = modelArg
     if (provider.length === 0 && model.includes('/')) {
-      const cut = model.indexOf('/')
-      const prefix = model.slice(0, cut)
+      // A model id may itself contain a slash (OpenRouter ids are
+      // `<vendor>/<model>`), so an EXACT catalog id wins over the
+      // "provider/model" shorthand. Only an unmatched id is split by its
+      // first slash. Otherwise `openai/gpt-6-luna` under an `openai` provider
+      // would silently become provider `openai`, model `gpt-6-luna`.
+      const exactOwners = []
       for (const group of groups) {
-        if (group && group.id === prefix) {
-          provider = prefix
-          model = model.slice(cut + 1)
-          break
+        const candidates = group && Array.isArray(group.models) ? group.models : []
+        if (candidates.some((candidate) => candidate && candidate.id === modelArg) && typeof group.id === 'string') exactOwners.push(group.id)
+      }
+      if (exactOwners.length === 1) {
+        provider = exactOwners[0]
+      } else if (exactOwners.length > 1) {
+        return { error: `модель "${modelArg}" есть у нескольких провайдеров (${exactOwners.join(', ')}) — укажите provider явно` }
+      } else {
+        const cut = modelArg.indexOf('/')
+        const prefix = modelArg.slice(0, cut)
+        for (const group of groups) {
+          if (group && group.id === prefix) {
+            provider = prefix
+            model = modelArg.slice(cut + 1)
+            break
+          }
         }
       }
     }
@@ -404,9 +420,25 @@ export function apply(ctx, input = {}) {
     }
   }
 
+  /**
+   * Prompt suffix teaching a spawned session to push its report back into the
+   * caller's session. Used by the vv adversarial-review route, but generic:
+   * any caller that wants a pushed report instead of polling passes
+   * `reportToParent: true`.
+   */
+  function reportRoutingBlock(parentSessionId) {
+    return [
+      '[managed-session report routing]',
+      `You were spawned from parent session "${parentSessionId}". When your task is complete, push the full report into that parent session with the session_send tool:`,
+      `session_send { sessionId: "${parentSessionId}", text: "<the complete report>", mode: "queue" }`,
+      'Start the text with a header line that names the task, e.g. "[managed-session report] adversarial review: <short title>"; then put the complete report in text — status envelope, anchored findings, coverage ledger, or whatever your task requires — not just a summary.',
+      'After the push succeeds, write a one-paragraph summary as your own final answer. If session_send is unavailable or fails, still finish normally: the parent can read your result with session_status.',
+    ].join('\n')
+  }
+
   const spawnTool = {
     name: 'session_spawn',
-    description: 'Создать НОВУЮ управляемую сессию (managed session) в workspace и сразу дать ей задачу. Это самостоятельная сессия верхнего уровня, а не субагент: она видна пользователю в сайдбаре workspace, живёт независимо от текущей сессии, её можно открыть, дополнить и продолжить вручную. Возвращает sessionId. Результат работы НЕ приходит автоматически — следите через session_status. По умолчанию новая сессия наследует агент-пресет текущей сессии; модель — деплоймент-дефолт, если не указаны provider/model/reasoningEffort.',
+    description: 'Создать НОВУЮ управляемую сессию (managed session) в workspace и сразу дать ей задачу. Это самостоятельная сессия верхнего уровня, а не субагент: она видна пользователю в сайдбаре workspace, живёт независимо от текущей сессии, её можно открыть, дополнить и продолжить вручную. Возвращает sessionId. Результат работы НЕ приходит автоматически: либо передайте reportToParent: true — тогда новая сессия сама запушит итоговый отчёт в вашу сессию через session_send, — либо следите через session_status. По умолчанию новая сессия наследует агент-пресет текущей сессии; модель — деплоймент-дефолт, если не указаны provider/model/reasoningEffort.',
     parameters: {
       type: 'object',
       properties: {
@@ -417,6 +449,7 @@ export function apply(ctx, input = {}) {
         provider: { type: 'string', description: 'Провайдер модели для новой сессии (опционально). Можно не указывать, если model однозначно находится в каталоге.' },
         model: { type: 'string', description: 'ID модели для новой сессии (опционально). Принимается и форма "provider/model".' },
         reasoningEffort: { type: 'string', description: 'Усилие рассуждения для выбранной модели (опционально; иначе — дефолт самой модели).' },
+        reportToParent: { type: 'boolean', description: 'Когда true, к первому prompt добавляется маршрутизация отчёта: новая сессия знает id вызывающей сессии и пушит итоговый отчёт в неё через session_send (mode=queue). В ответе приходит parentSessionId.' },
       },
       required: ['prompt'],
     },
@@ -435,6 +468,7 @@ export function apply(ctx, input = {}) {
           provider: { type: 'string' },
           model: { type: 'string' },
           reasoningEffort: { type: 'string' },
+          parentSessionId: { type: 'string' },
           warning: { type: 'string' },
           error: { type: 'string' },
         },
@@ -446,7 +480,10 @@ export function apply(ctx, input = {}) {
           const route = result.model === undefined ? 'деплоймент-дефолт' : `${result.provider}/${result.model}${result.reasoningEffort === undefined ? '' : ` (${result.reasoningEffort})`}`
           const preset = result.agentPreset === undefined ? '' : `, пресет: ${result.agentPreset}${result.presetInherited === true ? ' (унаследован)' : ''}`
           const warning = result.warning === undefined ? '' : ` Внимание: ${result.warning}.`
-          return [{ type: 'text', text: `Сессия ${result.sessionId} создана (${where}, модель: ${route}${preset}) и задача доставлена.${warning} Следить: session_status { sessionId: "${result.sessionId}" }.` }]
+          const report = result.parentSessionId === undefined
+            ? ''
+            : ` Отчёт придёт в ${result.parentSessionId} через session_send.`
+          return [{ type: 'text', text: `Сессия ${result.sessionId} создана (${where}, модель: ${route}${preset}) и задача доставлена.${warning}${report} Следить: session_status { sessionId: "${result.sessionId}" }.` }]
         }
         return [{ type: 'text', text: `Не удалось создать сессию: ${result.error || 'unknown error'}` }]
       },
@@ -456,6 +493,16 @@ export function apply(ctx, input = {}) {
       if (sc === undefined) return { ok: false, error: 'сервис sessionController недоступен в этом рантайме' }
       const promptText = args && typeof args.prompt === 'string' ? args.prompt.trim() : ''
       if (promptText.length === 0) return { ok: false, error: 'prompt обязателен и не может быть пустым' }
+      const reportToParent = args !== null && typeof args === 'object' && args.reportToParent === true
+      const callerAgent = exec !== undefined && exec !== null ? exec.agent : undefined
+      const parentSessionId = reportToParent
+        ? (callerAgent !== undefined && callerAgent !== null && typeof callerAgent.id === 'string' ? callerAgent.id : undefined)
+        : undefined
+      if (reportToParent && parentSessionId === undefined) {
+        return { ok: false, error: 'reportToParent требует вызывающего агента (exec.agent); отчёт некуда пушить' }
+      }
+      // A pushed-report session gets one extra, self-contained routing block.
+      const childPrompt = parentSessionId === undefined ? promptText : `${promptText}\n\n${reportRoutingBlock(parentSessionId)}`
       const explicitCwd = args && typeof args.cwd === 'string' && args.cwd.trim().length > 0 ? args.cwd.trim() : undefined
       const cwd = explicitCwd !== undefined ? explicitCwd : callerCwd(exec)
       if (cwd === undefined) return { ok: false, error: 'не удалось определить каталог workspace: передайте cwd явно' }
@@ -499,7 +546,7 @@ export function apply(ctx, input = {}) {
         }
       }
       try {
-        await sc.prompt({ requestId: newRequestId(), sessionId, mode: 'queue', content: [{ type: 'text', text: promptText }] }, exec.signal)
+        await sc.prompt({ requestId: newRequestId(), sessionId, mode: 'queue', content: [{ type: 'text', text: childPrompt }] }, exec.signal)
       } catch (error) {
         const result = { ok: false, sessionId, cwd, error: `сессия создана, но prompt не доставлен (${describe(error)}); повторите через session_send` }
         if (title !== undefined) result.title = title
@@ -516,13 +563,14 @@ export function apply(ctx, input = {}) {
         result.model = selection.model
         if (selection.reasoningEffort !== undefined) result.reasoningEffort = selection.reasoningEffort
       }
+      if (parentSessionId !== undefined) result.parentSessionId = parentSessionId
       return result
     },
   }
 
   const sendTool = {
     name: 'session_send',
-    description: 'Отправить сообщение в существующую сессию (в том числе в сессию, созданную session_spawn). Холодная сессия будет поднята с диска. mode=queue — в очередь следующего хода, mode=steer — в текущий ход, если он идёт.',
+    description: 'Отправить сообщение в существующую сессию (в том числе в сессию, созданную session_spawn, и обратно в parent-сессию из managed-сессии). Холодная сессия будет поднята с диска. mode=queue — в очередь следующего хода, mode=steer — в текущий ход, если он идёт.',
     parameters: {
       type: 'object',
       properties: {

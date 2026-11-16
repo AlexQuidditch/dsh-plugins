@@ -110,6 +110,11 @@ class StubSessionController extends Service {
       groups: [
         { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-flash' }, { id: 'deepseek-pro' }] },
         { id: 'zai', name: 'Z.ai', models: [{ id: 'glm-4.7' }, { id: 'deepseek-flash' }] },
+        // A provider whose own ids are bare and an aggregator whose ids are
+        // `<vendor>/<model>`: `openai/gpt-6-luna` must resolve to openrouter,
+        // not be split into provider `openai` + model `gpt-6-luna`.
+        { id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-6-luna' }] },
+        { id: 'openrouter', name: 'OpenRouter', models: [{ id: 'openai/gpt-6-luna' }, { id: 'anthropic/claude-opus-5.5' }] },
       ],
       failures: [],
     }
@@ -253,6 +258,7 @@ const root = await makeRoot(liveSessions, {})
 const tools = root.tools
 check('все четыре тула зарегистрированы', ['session_spawn', 'session_send', 'session_status', 'session_cancel'].every((name) => byName(tools, name) !== undefined), tools.registered.map((d) => d.name).join(','))
 check('session_spawn требует prompt', JSON.stringify(byName(tools, 'session_spawn').parameters.required) === '["prompt"]')
+check('session_spawn принимает reportToParent', byName(tools, 'session_spawn').parameters.properties.reportToParent.type === 'boolean')
 
 // ── 1b. скилл политики делегирования ───────────────────────────────────────
 
@@ -353,6 +359,40 @@ appends.length = 0
 const unvalidated = await byName(noLlm.tools, 'session_spawn').execute({ prompt: 'без llm', provider: 'zai', model: 'glm-4.7' }, exec)
 check('модель: без llm-сервиса выбор всё равно пишется', unvalidated.ok === true && appends.some((entry) => entry.event === 'model/selection'), JSON.stringify(unvalidated))
 await noLlm.fiber.dispose()
+
+// ── 3d. slash-модели и отчёт в parent-сессию ───────────────────────────────
+
+appends.length = 0
+const aggregated = await spawn.execute({ prompt: 'luna', model: 'openai/gpt-6-luna' }, exec)
+check('модель: exact catalog id с slash не режется на provider/model', aggregated.ok === true && aggregated.provider === 'openrouter' && aggregated.model === 'openai/gpt-6-luna', JSON.stringify(aggregated))
+check('модель: exact-match пишет effective route в model/selection', appends.some((entry) => entry.event === 'model/selection' && entry.data.provider === 'openrouter' && entry.data.model === 'openai/gpt-6-luna'), JSON.stringify(appends.filter((entry) => entry.event === 'model/selection')))
+
+appends.length = 0
+const explicitHttps = await spawn.execute({ prompt: 'luna явно', provider: 'openrouter', model: 'openai/gpt-6-luna', reasoningEffort: 'high' }, exec)
+check('модель: provider открытым текстом + slash id принимается как есть', explicitHttps.ok === true && explicitHttps.provider === 'openrouter' && explicitHttps.model === 'openai/gpt-6-luna' && explicitHttps.reasoningEffort === 'high', JSON.stringify(explicitHttps))
+
+const routine = await spawn.execute({ prompt: 'рутина', provider: 'openrouter', model: 'anthropic/claude-opus-5.5' }, exec)
+check('модель: второй slash id тоже резолвится', routine.ok === true && routine.provider === 'openrouter' && routine.model === 'anthropic/claude-opus-5.5', JSON.stringify(routine))
+
+// reportToParent: no polling — the child is told to push the report back.
+const promptCallsBefore = root.sessionController.calls.filter((call) => call.method === 'prompt').length
+const routed = await spawn.execute({ prompt: 'сделай ревью и пришли отчёт', reportToParent: true }, exec)
+check('reportToParent: spawn ok и parentSessionId в результате', routed.ok === true && routed.parentSessionId === 'caller-1', JSON.stringify(routed))
+const routedCalls = root.sessionController.calls.filter((call) => call.method === 'prompt')
+const routedPrompt = routedCalls[routedCalls.length - 1]
+const routedText = routedPrompt.request.content[0].text
+check('reportToParent: prompt сохраняет исходный текст первым', routedText.startsWith('сделай ревью и пришли отчёт\n\n'), routedText.slice(0, 120))
+check('reportToParent: prompt содержит routing-блок с id родителя', routedText.includes('[managed-session report routing]') && routedText.includes('caller-1'), routedText.slice(-500))
+check('reportToParent: routing называет session_send и полный отчёт', routedText.includes('session_send') && routedText.includes('mode: "queue"') && routedText.includes('complete report'), routedText.slice(-500))
+check('reportToParent: ровно одна доставка prompt', root.sessionController.calls.filter((call) => call.method === 'prompt').length === promptCallsBefore + 1)
+
+const noPromptDecor = root.sessionController.calls.filter((call) => call.method === 'prompt')
+const plainText = noPromptDecor.find((call) => call.request.content[0].text === 'сделай X')
+check('reportToParent выключен по умолчанию: prompt не декорируется', plainText !== undefined)
+
+const noCaller = { signal: new AbortController().signal }
+const orphanReport = await spawn.execute({ prompt: 'отчёт без вызывающего', reportToParent: true }, noCaller)
+check('reportToParent без exec.agent отклонён до создания', orphanReport.ok === false && String(orphanReport.error).includes('reportToParent'), JSON.stringify(orphanReport))
 
 // ── 3c. наследование агент-пресета ──────────────────────────────────────────
 
