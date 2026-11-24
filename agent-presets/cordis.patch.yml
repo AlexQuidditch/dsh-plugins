@@ -1,13 +1,4 @@
-# Two custom agent presets, declared as `@deepseek-ai/dsh-agent-preset` rows.
-#
-# 0.2 migration note. Before declaration rows existed, a user preset was a
-# directory `$DSH_HOME/.agent-presets/<id>/` holding `preset.yml` +
-# `agent.cordis.yml`. Nothing reads that directory any more, so both presets
-# silently vanished from the roster after the upgrade. They now travel as one
-# installed bundle instead; the legacy directories can be deleted.
-#
-# Each `plugins` list below is the CURRENT shipped preset of the same family,
-# so every plugin name resolves in this DSH release:
+# Custom agent presets, declared as `@deepseek-ai/dsh-agent-preset` rows:
 #   - vv-controller     ← shipped `cordis` preset, minus `tool-cordis`
 #                         (self-modification is a trust boundary for preset
 #                         authoring, not part of a work agent), plus the vv
@@ -17,14 +8,26 @@
 #   - standard-browser  ← shipped `standard` preset, plus one
 #                         `subagent_browser` delegation tool wired to the
 #                         `browser-subagent` child preset.
+#   - cursor/vv-controller ← a derivative of vv-controller for the `cursor`
+#                         LLM provider (plugin cursor-to-dsh), with its own
+#                         `cursor/vv-worker` child preset; its route comes from
+#                         workspace-policy `model.presets` (see the family
+#                         comment further down and agent-presets/README.md).
+#
+# 0.2 migration note. Before declaration rows existed, a user preset was a
+# directory `$DSH_HOME/.agent-presets/<id>/` holding `preset.yml` +
+# `agent.cordis.yml`. Nothing reads that directory any more, so the presets
+# silently vanished from the roster after the upgrade. They now travel as one
+# installed bundle instead; the legacy directories can be deleted.
 #
 # 0.2.1 migration note. `@deepseek-ai/dsh-tool-subagent` no longer accepts
 # `persona` or `toolFilter`: the row throws at load with "persona is no
 # longer supported; configure persona and tool plugins in an Agent Preset and
 # select it with agentPreset (spawn only)". A child's persona and tool list
 # are now an Agent Preset of their own, selected from the tool row with
-# `agentPreset: <id>` — that is why this bundle declares two extra presets
-# (`vv-worker`, `browser-subagent`) next to the two user-facing ones.
+# `agentPreset: <id>` — that is why this bundle declares extra child presets
+# (`vv-worker`, `browser-subagent`, `cursor/vv-worker`) next to the
+# user-facing ones.
 # `backgroundMode` disappeared in 0.2.1 as well (children are continuable by
 # default), so those rows are gone. Note that `toolFilter` has no replacement:
 # the old "only chrome_*" allowlist cannot be expressed any more, and
@@ -300,8 +303,17 @@
               # DeepSeek-V41-Flash route at maximum reasoning effort; the
               # controller itself runs on whatever the workspace/global default
               # resolves to (the dsh-plugins workspace policy names GLM-5.3).
-              # No `modelSelectionSettings`, so the route cannot be overridden
-              # per call.
+              #
+              # `modelSelection` + `modelDiscovery` expose the optional
+              # provider/model/reasoning_effort fields on the tool and register
+              # `list_subagent_models`. The review protocol needs them: review
+              # agents are SUBAGENTS on other families — primary
+              # openrouter/openai/gpt-6-luna (effort max), adversarial
+              # cursor/grok-4.7 (effort high) — while the implementer keeps the
+              # pinned fast route above as its default. Those routes must also be
+              # authorized for subagents by the Host route policy
+              # (`allowedModels` in the profile patch); otherwise per-call
+              # selection rejects before provider I/O.
               #
               # Children compose the `vv-worker` preset: its persona is the pure
               # executor contract and its plugin list is the coding toolset the
@@ -313,6 +325,8 @@
                 config:
                   provider: spawn
                   toolName: subagent
+                  modelSelection: true
+                  modelDiscovery: true
                   agentPreset: vv-worker
                   agentOptions:
                     provider: deepseek-official
@@ -503,7 +517,8 @@
                 config:
                   provider: spawn
                   toolName: subagent
-                  modelSelectionSettings: true
+                  modelSelection: true
+                  modelDiscovery: true
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
@@ -573,3 +588,347 @@
           - id: tool-plugin-manager
             name: '@deepseek-ai/dsh-plugin-manager/tools'
             disabled: true
+    # ── cursor/vv-controller ──────────────────────────────────────────────────
+    #
+    # Same vv workflow as `vv-controller`, but tuned for the `cursor` LLM
+    # provider registered by the `cursor-to-dsh` plugin: the controller, its
+    # subagents and the vv-execute executor managed session all run on the
+    # Cursor route. Route wiring:
+    #
+    # - master session: `model.presets['cursor/vv-controller']` in
+    #   .dsh/workspace.yaml (workspace-policy selects it at agent/created); a
+    #   manual composer selection passes through untouched;
+    # - subagents: `model.presets['cursor/vv-worker']` — same preset family —
+    #   and, in a workspace without a policy file, the `agentOptions` pin on
+    #   the parent's tool-subagent row below;
+    # - vv-execute executor: managed-sessions inherits the parent preset, so it
+    #   lands on the same preset route without extra wiring.
+    #
+    # peak-hours does not gate these sessions (its schedules name only the
+    # `deepseek` and `zai` families; an unknown provider passes through), and
+    # provider-retry ignores Cursor failures (their signatures are not the
+    # Z.ai/OpenRouter/DeepSeek quota set). Requires the `cursor-to-dsh` plugin
+    # and a Cursor API key; see agent-presets/README.md.
+
+    - id: preset-cursor-vv-worker
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: cursor/vv-worker
+        name: 'cursor/vv-worker (subagent)'
+        description: 'Исполнитель для субагентов cursor/vv-controller: тот же контракт vv-worker; cursor-маршрут задаёт model.presets в workspace-policy или agentOptions вызывающего пресета.'
+        order: 10
+        plugins:
+          # Children must NOT re-run the vv routing policy (they execute one
+          # delegated role prompt), so the persona is a pure executor contract.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a delegated subagent executing one self-contained task for
+                the vv-controller agent. Follow the task prompt exactly, verify what
+                you can, and report a concise factual result. Browser policy: you
+                have the full chrome_* tool suite. Whenever the task touches a user
+                interface, prefer opening it in Chrome and taking chrome_screenshot
+                to observe the actual rendered state — seeing the interface beats
+                guessing from markup and speeds up the work, and your model accepts
+                image input. Use chrome_snapshot for stable element uids when you
+                need to interact. PC-testing baseline: when the task tests or
+                verifies a desktop (PC) UI, the Chrome window opens at the
+                configured 1920x1080 px; confirm `window.outerWidth`/`window.outerHeight`
+                is 1920x1080 and, only if it is not, ask for it with
+                chrome_evaluate `window.resizeTo(1920, 1080)` — then take every
+                screenshot and UI check at that base viewport; if the exact size
+                cannot be set, report the achieved viewport instead of staying
+                silent. (The 1280x900-era default was too narrow: page sidebars
+                ran out of room in screenshots.) When debugging UI behavior, capture the browser console
+                right after page load (chrome_evaluate a small collector that
+                buffers console.error/console.warn and window.onerror) and read it
+                before reporting — console output is a primary debugging signal.
+                Mandatory cleanup: if this task opened a Chrome
+                window, your LAST tool call before the final answer MUST be
+                chrome_close — never leave the window for the idle timeout to reap.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          # The vv investigation trajectory may need a source the controller
+          # linked; implementers/reviewers read it themselves.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          # A child that inherits the parent preset would have the delegation
+          # group's messaging tools; an independent child preset loses them.
+          # `send_message` must exist in the child scope for the subagent
+          # runtime to inject its "report to your parent" guidance, so mount
+          # the control tools here too (send_message + interrupt_agent).
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          # Long implementation waves should compact instead of dying on the
+          # context window.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    - id: preset-cursor-vv-controller
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: cursor/vv-controller
+        name: 'cursor/vv-controller'
+        description: 'Порт vv-opencode на моделях Cursor (провайдер cursor из плагина cursor-to-dsh): тот же spec → plan → execute цикл с review-гейтами; маршруты — model.presets в workspace-policy.'
+        order: 9
+        plugins:
+          # The preset's own persona, shadowing the deployment default. The
+          # session's own route is NOT pinned here (the preset schema cannot):
+          # workspace-policy `model.presets` selects it at agent/created for a
+          # fresh session, and a manual composer selection always wins. The
+          # prefix carries the whole vv work policy: trajectory routing,
+          # approval gates, review discipline, artifact layout, verification.
+          # It already names the working directory, so no `suffix` is needed.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a coding agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is the workspace root supplied by the runtime context.
+
+                You follow the vv work policy — a spec-first, review-driven workflow ported from vv-opencode:
+
+                1. Route every request to the lightest trajectory:
+                   - Small, local changes (a rename, a tweak, fixing one test) → do them directly.
+                   - Unclear behavior, bugs, or failures → investigate the root cause first (read, reproduce, diagnose), then a targeted fix and verification. Never patch symptoms.
+                   - Features, creative work, or broad changes with no agreed contract → vv-spec → explicit approval → vv-plan → explicit approval → vv-execute. Never jump straight into edits.
+                   - The user wants findings rather than fixes → vv-review (reports and stops).
+                   Execution model is fixed, not a menu: once a plan is approved, vv-execute hands implementation to a dedicated executor managed session spawned with session_spawn; the planning/controller session never implements the plan and never offers same-session implementation as an option.
+
+                2. Skills: the session skill catalog lists each skill and when it applies. Load the matching skill with the skill tool before starting that workflow: vv-spec (feature with no agreed contract), vv-plan (an approved spec), vv-execute (an approved plan — spawns the dedicated executor managed session), vv-review (findings only), vv-reflect (durable lessons after long work), vv-handoff (ending a session with context to preserve). Explicit user instructions always win over these triggers.
+
+                3. Approval gates: every gate waits for an explicit user answer through ask_user_question. A spec or plan is never "assumed approved", and conversational agreement approves nothing. Approved artifacts are the only source of truth for execution.
+
+                4. Review discipline: implementation, spec review, and code review are separate steps by separate subagents (spawned with the subagent tool, each with a complete standalone prompt from the skill) — never one agent silently implementing and "reviewing" itself. Review loops are bounded; after the retry limit, stop and ask the user instead of looping.
+
+                5. Artifacts: specs and plans live in .vvoc/specs/YYYY-MM-DD-<slug>/ (spec.xml, plan.xml, design-context.xml). They are XML with snake_case fields, unique element identities (<TASK-T-001>, <WAVE-1>, <COMPONENT-SLUG>), and a lifecycle status draft → approved → applied, so they stay grep-able. Applied packages move to .vvoc/specs/archive/. Durable notes go to .vvoc/lessons/ and .vvoc/runbooks/, handoff notes to .vvoc/handoff/.
+
+                6. Verification: every plan task ends with its acceptance criteria verified (tests, typecheck, lint) before the next task starts. Unverified work is unfinished work.
+
+                7. Browser work: subagents have the full chrome_* tool suite. For any UI task, prefer a subagent that opens the page and takes chrome_screenshot to observe the real rendered interface — visual evidence beats guessing from markup and speeds up the work. Independent browsing tasks run in parallel: each subagent owns its own isolated Chrome window with its own profile, so start several with run_in_background: true, watch them with list_agents, and steer a running one with send_message. Every subagent is required to close its window with chrome_close as its final action — no Chrome instance is left behind.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+                # 0.2.2: the main entry registers send_message, interrupt_agent,
+                # AND list_agents together; the separate ./list-agents sub-entry
+                # was removed from the package exports, so the extra row that
+                # mounted it made this preset fail activation ("never started").
+              # vv subagents (implementer / reviewer / spec-review roles embedded
+              # in the vv-execute and vv-review skills) run on the Cursor route
+              # pinned below — one model for the whole family (no effort field:
+              # the cursor adapter takes efforts from the live Cursor catalog).
+              # In a workspace with a policy, model.presets overrides this pin by
+              # design; in a policy-less workspace this pin is the default.
+              #
+              # `modelSelection` + `modelDiscovery` are enabled for the same
+              # reason as in vv-controller: the review protocol spawns review
+              # SUBAGENTS on other families (openrouter/openai/gpt-6-luna max,
+              # cursor/grok-4.7 high) over the implementer default pinned above.
+              # The routes need Host authorization (`allowedModels` in the
+              # profile patch) before per-call selection is accepted.
+              #
+              # Children compose the `cursor/vv-worker` preset: its persona is
+              # the pure executor contract and its plugin list is the coding
+              # toolset the implementer/reviewer roles need. DSH 0.2.1 rejects
+              # `persona` and `toolFilter` on this row at load, so an independent
+              # child preset selected with `agentPreset` is the seam for both.
+              #
+              # Cursor family notes: requires the `cursor-to-dsh` plugin (route
+              # `cursor`) with a Cursor API key that carries the `agent:*` scope
+              # (a service token without it fails every run with
+              # permission_denied); `default` is the Cursor Default (auto) model
+              # id — swap it for any id from the live Cursor catalog (Settings →
+              # Models) in this one place plus `model.presets` in the workspace
+              # policy. peak-hours and provider-retry never gate cursor routes:
+              # the schedules cover only `deepseek`/`zai` families and the retry
+              # signatures only Z.ai/OpenRouter/DeepSeek failures.
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelection: true
+                  modelDiscovery: true
+                  agentPreset: cursor/vv-worker
+                  agentOptions:
+                    provider: cursor
+                    model: default
+              # Fork is deliberately NOT model-pinned: a fork child continues
+              # this same conversation, so it keeps the parent's route for
+              # KV-cache reuse and coherence. Model pinning applies to
+              # standalone spawn children above.
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  maxDepth: provider-managed
+              - id: tool-subagent-claude-code
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: claude-code
+                  toolName: subagent_claude_code
+                  maxDepth: provider-managed
+              # NOTE: workflow and ralph children cannot be model-pinned — these
+              # rows accept no agentOptions, so their agents inherit the
+              # controller's route unless the workflow script passes
+              # provider/model explicitly per agent().
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                disabled: true
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          # Fetch stays enabled: the vv investigation trajectory reads web
+          # sources. The `web` service and its search provider stay on the host.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          # The six vv-* skills ship inside THIS package. `baseUrl` is the
+          # profile dir, so resolving the package's own `package.json` through
+          # it finds the installed bundle wherever the profile keeps it — the
+          # same idiom the shipped `cordis` preset uses for its own skills.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-agent-presets/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"
+
+

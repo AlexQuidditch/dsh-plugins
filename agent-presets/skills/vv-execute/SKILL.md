@@ -185,6 +185,8 @@ Question: &lt;NEEDS_CONTEXT|BLOCKED only: the single concrete question&gt;</form
 </subagent_contract>
 
 <review_gating>
+<rule>Review agents are SUBAGENTS of this executor session, spawned with the `subagent` tool — never separate managed sessions, never `session_spawn`. Start the independent delegations together; their reports return to this session as completion notices (no `reportToParent`, no `session_status` polling). A review lens that cannot be spawned as a subagent is a coverage failure, not a silent skip.</rule>
+<rule>Review routes (deployment standing choice, declared by the profile owner 2026-11-13): PRIMARY reviewer `provider: openrouter`, `model: openai/gpt-6-luna`, `reasoning_effort: max`; ADVERSARIAL reviewer `provider: cursor`, `model: grok-4.7`, `reasoning_effort: high` (route registered by the `cursor-to-dsh` plugin). Pass `provider` explicitly for the luna route: the model id contains a slash. Different families are the point (OpenAI vs xAI); if a route is unavailable, use the nearest reachable different family and declare the degradation. `list_subagent_models` reports the routes authorized for this Session when one is in doubt.</rule>
 <rule>When reviewers gate a task or the plan close, dispatch them through the vv-review contract. Every reviewer prompt MUST include the bounded-work contract: at most 2 bounded inspection rounds, about 32 KB total read budget, about a 400-line cap per single-file read, the third response writes the report and starts no new reads or searches, no repository-wide searches.</rule>
 <rule>Reviewer reports must return anchored findings (two-axis classification plus EXCERPT) and end with a coverage ledger whose Result is cleared | degraded_cleared | blocked. Verify anchors with spec_guard_evidence; failed anchors are recorded as REJECTED_EVIDENCE and the finding is rejected wholesale.</rule>
 <rule>When fixes loop, apply vv-review convergence: max 2 fix passes plus 1 verify-only pass; from pass 2 only Critical/Important anchored findings are auto-fixed, everything else is DEFERRED into .vvoc/specs/&lt;id&gt;/reviews/deferred-findings.md; exhaustion is reported with a closed reason code, never silently.</rule>
@@ -442,10 +444,10 @@ Otherwise → move to the next task in dependency order.
 </executor-workflow>
 
 <model-selection>
-<principle>In the executor workflow, use the least powerful model that can handle each delegated role:</principle>
-<rule>Mechanical tasks (1-2 files, clear contract, standard patterns) → fast/default role</rule>
-<rule>Integration tasks (multi-file, coordination, state management) → smart role</rule>
-<rule>Review tasks (spec-reviewer, code-reviewer) → smart role</rule>
+<principle>In the executor workflow, use the least powerful model that can handle each delegated role; review lenses are the exception — they are pinned to the two different-family routes so independence is real.</principle>
+<rule>Mechanical tasks (1-2 files, clear contract, standard patterns) → the implementer default route (the preset's `agentOptions`, i.e. fast DeepSeek/GLM at maximum effort)</rule>
+<rule>Integration tasks (multi-file, coordination, state management) → the same default route; upgrade only when the task genuinely needs it</rule>
+<rule>Review tasks: PRIMARY reviewer → `provider: openrouter`, `model: openai/gpt-6-luna`, `reasoning_effort: max`; ADVERSARIAL reviewer → `provider: cursor`, `model: grok-4.7`, `reasoning_effort: high`. Both as subagents (see review_gating); these routes require `modelSelection: true` on the preset's `tool-subagent` row and authorization in the Host subagent route policy</rule>
 <rule>If vv-implementer returns BLOCKED and the issue is task complexity, re-dispatch with a more capable model before escalating</rule>
 </model-selection>
 

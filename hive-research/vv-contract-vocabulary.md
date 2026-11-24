@@ -195,11 +195,27 @@ gaps, how this plan/change could look complete yet fail in production".
 Trigger: plan risk level `mandatory` from `spec_guard_lint` (§N), or Tier 3
 (formal) package, or user request.
 
+Transport (profile-owner decision 2026-11-13): both review lenses are
+**subagents** of the root/executor session, spawned with the `subagent` tool.
+Reviews are never separate managed sessions and never `session_spawn`; reports
+return as ordinary subagent completion notices, so there is no
+`reportToParent`/`session_status` collection step.
+
+Standing routes (different families, both authorized for subagents):
+- PRIMARY reviewer — `provider: openrouter`, `model: openai/gpt-6-luna`,
+  `reasoning_effort: max`;
+- ADVERSARIAL reviewer — `provider: cursor`, `model: grok-4.7`,
+  `reasoning_effort: high` (route registered by the `cursor-to-dsh` plugin).
+Pass `provider` explicitly for the luna route (its id contains a slash). The
+routes are exposed per call because the preset's `tool-subagent` row sets
+`modelSelection: true` (+ `modelDiscovery: true` for `list_subagent_models`),
+and the Host route policy (`allowedModels` in the profile patch) must authorize
+them; otherwise selection rejects before provider I/O.
+
 Model-family independence (hive `route_resolver` semantics, adapted — hive does
 not refuse, it downgrades coverage):
 - Dispatch the adversary on a different provider family than the primary
-  reviewer/planner (subagent/session_spawn accept provider+model; families in
-  this deployment: `deepseek`, `zai/glm`, `openrouter/qwen`, `anthropic`, `openai`…).
+  reviewer/planner (in this deployment the standing pair is OpenAI vs xAI).
 - The review report MUST declare independence explicitly:
   - `Independence: verified (primary=<family>, adversary=<family>)`, or
   - `Independence: degraded:same_family` / `degraded:unknown_family`.
