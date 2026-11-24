@@ -41,7 +41,7 @@ managed-сессиями. Семейства разные по замыслу:
 
 | Линза | Маршрут | Роль |
 | --- | --- | --- |
-| Primary reviewer | `provider: openrouter`, `model: openai/gpt-6-luna`, `reasoning_effort: max` | полный проход по контракту/спеке |
+| Primary reviewer | `provider: openrouter`, `model: openai/gpt-6-luna`, `reasoning_effort: high` | полный проход по контракту/спеке |
 | Adversarial reviewer | `provider: cursor`, `model: grok-4.7`, `reasoning_effort: high` | другой бриф: скрытые противоречия, rollback-пробелы, «как это упадёт в проде» |
 
 Для работы per-call маршрутов нужны обе половины: (1) строки `tool-subagent`

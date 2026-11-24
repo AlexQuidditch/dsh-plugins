@@ -308,7 +308,7 @@
               # provider/model/reasoning_effort fields on the tool and register
               # `list_subagent_models`. The review protocol needs them: review
               # agents are SUBAGENTS on other families — primary
-              # openrouter/openai/gpt-6-luna (effort max), adversarial
+              # openrouter/openai/gpt-6-luna (effort high), adversarial
               # cursor/grok-4.7 (effort high) — while the implementer keeps the
               # pinned fast route above as its default. Those routes must also be
               # authorized for subagents by the Host route policy
@@ -831,7 +831,7 @@
               #
               # `modelSelection` + `modelDiscovery` are enabled for the same
               # reason as in vv-controller: the review protocol spawns review
-              # SUBAGENTS on other families (openrouter/openai/gpt-6-luna max,
+              # SUBAGENTS on other families (openrouter/openai/gpt-6-luna high,
               # cursor/grok-4.7 high) over the implementer default pinned above.
               # The routes need Host authorization (`allowedModels` in the
               # profile patch) before per-call selection is accepted.

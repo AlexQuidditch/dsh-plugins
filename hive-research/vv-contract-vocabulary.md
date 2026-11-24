@@ -203,7 +203,7 @@ return as ordinary subagent completion notices, so there is no
 
 Standing routes (different families, both authorized for subagents):
 - PRIMARY reviewer — `provider: openrouter`, `model: openai/gpt-6-luna`,
-  `reasoning_effort: max`;
+  `reasoning_effort: high`;
 - ADVERSARIAL reviewer — `provider: cursor`, `model: grok-4.7`,
   `reasoning_effort: high` (route registered by the `cursor-to-dsh` plugin).
 Pass `provider` explicitly for the luna route (its id contains a slash). The
