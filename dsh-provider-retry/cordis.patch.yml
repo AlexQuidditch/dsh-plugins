@@ -1,0 +1,34 @@
+# dsh-provider-retry bundle patch.
+#
+# One host plugin row. It listens on the agent loop's `agent/request-error`
+# waterfall, parses the provider's quota/rate-limit failure, and creates one
+# durable Host `schedule` task that wakes the same Session after the reported
+# reset instant. No client half, no profile files, no state of its own.
+- insert:
+    - id: provider-retry
+      name: dsh-provider-retry
+      config:
+        enabled: true
+        # Extra wait after the provider's reset instant, so a retry is not
+        # rejected by clock skew between the provider and this host.
+        graceSeconds: 90
+        # Waits shorter than this stay with the built-in in-turn retry policy
+        # (`dsh-llm-retry`); only long, quota-scale waits become tasks.
+        minScheduleDelaySeconds: 300
+        # Fallbacks for quota failures without a reset stamp. They apply only
+        # when scheduleWithoutReset is true.
+        fallbackDelayMinutes: 20
+        fiveHourFallbackMinutes: 300
+        reprobeDelayMinutes: 60
+        # Never schedule further away than this; delegate such failures.
+        maxDelayMinutes: 10080
+        # A quota failure without a parseable reset instant is not retried by
+        # default (top-up failures and unknown windows would loop pointlessly).
+        scheduleWithoutReset: false
+        # A delegated subagent Session cannot receive scheduled delivery; with
+        # "ancestor" the retry is aimed at its nearest root Session instead.
+        subagentPolicy: skip
+        titlePrefix: "[retry]"
+        # Naive reset timestamps are read in these zones. Z.ai publishes its
+        # coding-plan reset stamps in Beijing time (UTC+8), not UTC.
+        providerTimeZones: {}

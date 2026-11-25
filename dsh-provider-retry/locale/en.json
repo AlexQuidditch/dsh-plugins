@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Provider retry",
+    "description": "Turns provider quota and rate-limit failures into one durable retry scheduled after the reported reset time."
+  }
+}
