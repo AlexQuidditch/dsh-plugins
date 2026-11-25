@@ -24,12 +24,25 @@
   "files": [
     "lib/index.js",
     "lib/lint.js",
+    "lib/census.js",
+    "lib/execute.js",
+    "lib/amend.js",
+    "lib/grace.js",
     "lib/index.d.ts",
     "lib/lint.d.ts",
+    "lib/census.d.ts",
+    "lib/execute.d.ts",
+    "lib/amend.d.ts",
+    "lib/grace.d.ts",
+    "schemas/census-contract.json",
+    "schemas/lint-rules.json",
     "cordis.patch.yml"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "dependencies": {
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",

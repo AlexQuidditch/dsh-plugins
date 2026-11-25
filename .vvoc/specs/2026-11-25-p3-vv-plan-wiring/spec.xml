@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P3 package spec — dogfoods the P0 schema (paths + program membership).
+     Part of program .vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml (P-P3).
+     Design source: hive-research/vv-cross-scope-impact-rd.md §4.5/§4.6/§14; P0 templates.
+     P3 wires the vv-plan skill (deletes/renames, task scope, consumer-coverage,
+     scope-barrier waves, behavioral ACs) AND implements the plan/program lint rules
+     P3 owns (consumer-coverage, cascade-concentration, program-dag). No shared-surface
+     deletion, so impact-present is not triggered for P3 itself. -->
+<spec>
+  <status>approved</status>
+  <goal>Complete the spec-to-plan cross-scope contract: wire vv-plan to declare the structured deletion surface (deletes/renames D-NNN/R-NNN), task scope, consumer-coverage mapping, scope-barrier waves, and behavioral ACs for surface/policy; implement the P3-owned lint rules consumer-coverage + cascade-concentration (plan) and program-dag (program); extend plan-template.xml and route program.xml in lintFile.</goal>
+  <architecture>CLASSIFY_BOUNDARY: domain-only. Changes confined to agent-presets/skills/vv-plan (SKILL.md + plan-template.xml) and dsh-vv-spec-guard (lint.ts new rules, index.ts lintFile program.xml routing). The pure lint engine stays zero-dependency; consumer-coverage reads the sibling spec impact via the existing host-supplied specText option.</architecture>
+  <program>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</program>
+  <package-id>P-P3</package-id>
+  <paths>
+    <P-001><path>agent-presets/skills/vv-plan/SKILL.md</path><role>modify</role></P-001>
+    <P-002><path>agent-presets/skills/vv-plan/references/plan-template.xml</path><role>modify</role></P-002>
+    <P-003><path>dsh-vv-spec-guard/src/lint.ts</path><role>modify</role></P-003>
+    <P-004><path>dsh-vv-spec-guard/src/index.ts</path><role>modify</role></P-004>
+    <P-005><path>dsh-vv-spec-guard/lint.p3.test.mjs</path><role>create</role></P-005>
+  </paths>
+  <components>
+    <C-PLAN-SKILL>
+      <name>vv-plan skill wiring + plan/program lint rules</name>
+      <responsibility>deletes/renames + task scope + consumer-coverage + scope-barrier waves + behavioral ACs (surface/policy); lint rules consumer-coverage, cascade-concentration, program-dag; plan-template extension; program.xml routing</responsibility>
+      <depends-on></depends-on>
+    </C-PLAN-SKILL>
+  </components>
+  <testing>
+    <strategy>Unit tests for consumer-coverage (spec impact consumer covered by task scope or deferral), cascade-concentration (N shared-surface deletes in one task), program-dag (acyclic, component ownership, dep-P ref resolution). Skill frontmatter intact; plan-template parses; deletes/renames templates parse (P0).</strategy>
+    <coverage>consumer-coverage covered/deferred/missing; cascade-concentration threshold; program-dag cycle/duplicate-owner/unresolved-ref; census-incomplete interplay (plan deletes subset of spec set).</coverage>
+  </testing>
+  <non-goals>
+    <NG-001>Execution feedback (stale-impact, undeclared-deletion, addendum) — P4.</NG-001>
+    <NG-002>cross-scope-fanout ERROR flip — after archive calibration.</NG-002>
+    <NG-003>Panel / v2 items — P5.</NG-003>
+  </non-goals>
+</spec>

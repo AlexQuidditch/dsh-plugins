@@ -56,7 +56,18 @@ export function parseXmlLite(text: string): XmlNode {
   const TAG_RE = /<(\/?)([A-Za-z0-9_.-]+)((?:[^<>"']|"[^"]*"|'[^']*')*?)(\/?)>/g
   const stack: XmlNode[] = []
   let root: XmlNode | undefined
-  const clean = text
+  // CDATA-aware (P1): protect <![CDATA[...]]> payloads from tag tokenization.
+  // Snippets carry TS generics/JSX ('<T>', '<Component>') that the tokenizer would
+  // otherwise read as markup (33/36 throwing archived plans). Replace each CDATA
+  // block with a null-char sentinel, then restore verbatim content into element
+  // text after parsing.
+  const cdataContents: string[] = []
+  const protectedText = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_match, content: string) => {
+    const index = cdataContents.length
+    cdataContents.push(content)
+    return `\u0000CDATA${index}\u0000`
+  })
+  const clean = protectedText
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<\?[\s\S]*?\?>/g, '')
     .replace(/<!DOCTYPE[\s\S]*?>/gi, '')
@@ -107,6 +118,15 @@ export function parseXmlLite(text: string): XmlNode {
 
   if (stack.length > 0) throw new Error(`malformed XML: unclosed <${stack[stack.length - 1].name}>`)
   if (root === undefined) throw new Error('malformed XML: no root element')
+  if (cdataContents.length > 0) {
+    const restore = (node: XmlNode): void => {
+      if (node.text !== undefined) {
+        node.text = node.text.replace(/\u0000CDATA(\d+)\u0000/g, (_m, i: string) => cdataContents[Number(i)] ?? '')
+      }
+      for (const child of node.children) restore(child)
+    }
+    restore(root)
+  }
   return root
 }
 
@@ -163,6 +183,18 @@ function structuralStatus(root: XmlNode, override: string | undefined): string {
   return override ?? rootStatusAttribute(root) ?? 'draft'
 }
 
+/**
+ * P1 generation-gap: legacy artifacts carry root attributes (status/package) and
+ * the COMPONENT-, TASK-T-, WAVE- vocabulary; unique-tag artifacts carry a child
+ * status element and C-, T-NNN, wave-N tags with NO attributes. The legacy
+ * package-id and completeness rules apply only to the legacy generation so
+ * unique-tag artifacts are not falsely errored. The new cross-scope rules are
+ * generation-neutral.
+ */
+function isLegacyGeneration(root: XmlNode): boolean {
+  return rootStatusAttribute(root) !== undefined
+}
+
 function malformed(verdict: LintVerdict, error: unknown): LintVerdict {
   // Parse errors already carry the "malformed XML: " prefix; only non-Error
   // throws need it added, so the verdict never reads "malformed XML: malformed XML: …".
@@ -192,10 +224,37 @@ export interface LintApprovalOptions {
   approvalSidecarPresent?: boolean
 }
 
+/**
+ * Host-supplied census data for the P1 cross-scope rules (host/engine split): the
+ * HOST recomputes the census and passes values in; the pure lint engine only
+ * compares. Mirrors the §K host-supplies-digest pattern. When absent, the
+ * census-dependent rules degrade to a `census-unavailable` warning (never silent pass).
+ */
+export interface CensusLintData {
+  /** Per-scope hard-edge consumers from the host census (production scopes). */
+  perScope?: Array<{ scope: string; hardCount: number; edges: Array<{ kind: string; source: string; target: string }> }>
+  /** Host re-computed canonical census digest at the pinned ref. */
+  outputDigest?: string
+  /** False when the pinned ref is unreachable (shallow clone / GC). */
+  refReachable?: boolean
+  /** Declared delete/rename paths that failed resolution at baselineRef. */
+  pathUnresolvable?: string[]
+  /** The spec-pinned census set for census-incomplete (plan ⊆ spec set). */
+  specCensusSet?: { symbols: string[]; paths: string[] }
+  /** Distinct-production-scope fan-out threshold (overlay-configurable; default 3). */
+  fanoutThreshold?: number
+  /** cross-scope-fanout mode: warn (pre-calibration) | error (post-calibration). */
+  fanoutMode?: 'warn' | 'error'
+  /** cascade-concentration threshold (shared-surface deletes/renames in one task). */
+  cascadeThreshold?: number
+}
+
 /** Options for lintSpec. */
 export interface SpecLintOptions extends LintApprovalOptions {
   /** Override the lifecycle status (defaults to the root `status` attribute). */
   status?: string
+  /** P1: host-supplied census data for the cross-scope rules. */
+  census?: CensusLintData
 }
 
 /** One receipts.jsonl line as far as the lint engine needs it (§L). */
@@ -215,6 +274,8 @@ export interface PlanLintOptions extends LintApprovalOptions {
   receipts?: ReceiptLike[]
   /** Require receipt coverage even when the plan status is not `applied`. */
   checkReceipts?: boolean
+  /** P1: host-supplied census data (spec-pinned set) for census-incomplete. */
+  census?: CensusLintData
 }
 
 /**
@@ -338,7 +399,10 @@ export function lintSpec(text: string, options: SpecLintOptions = {}): LintVerdi
   }
 
   if (root.name !== 'spec') verdict.errors.push({ rule: 'root', message: `root element must be <spec>, found <${root.name}>` })
-  if (typeof root.attrs.package !== 'string' || root.attrs.package.trim() === '') {
+  // P1 generation-gap fix: the package-attribute requirement is a LEGACY convention
+  // (root attributes). Unique-tag artifacts (child <status>, no root attributes)
+  // forbid attributes, so the rule must not fire on them. Gate on legacy generation.
+  if (isLegacyGeneration(root) && (typeof root.attrs.package !== 'string' || root.attrs.package.trim() === '')) {
     verdict.errors.push({ rule: 'package', message: '<spec> requires a non-empty package attribute' })
   }
 
@@ -371,6 +435,26 @@ export function lintSpec(text: string, options: SpecLintOptions = {}): LintVerdi
     if (childrenNamed(root, 'acceptance').flatMap((acc) => childrenNamed(acc, 'criterion')).length === 0) {
       verdict.errors.push({ rule: 'completeness', message: 'approved/applied spec must have at least one <criterion>' })
     }
+  }
+
+  // Generation-neutrality (follow-up minor): unique-tag specs carry a bare <goal>, not
+  // the legacy <goals>/<requirements>/<acceptance> wrappers. Validate an approved/applied
+  // unique-tag spec has a goal so "delivered" rests on a criterion, not prose.
+  if (!isLegacyGeneration(root) && (status === 'approved' || status === 'applied')) {
+    const hasGoal = childrenNamed(root, 'goal').length > 0
+      || childrenNamed(root, 'goals').flatMap((goals) => childrenNamed(goals, 'goal')).length > 0
+    if (!hasGoal) {
+      verdict.errors.push({ rule: 'completeness', message: 'approved/applied spec must have a <goal>' })
+    }
+  }
+
+  // P1 cross-scope rules (generation-neutral). impact-present is paths-based and
+  // always runs; the census-dependent rules need host-supplied values.
+  lintImpactPresent(root, verdict)
+  if (options.census !== undefined) {
+    lintCensusSpec(root, verdict, options.census)
+  } else if (childrenNamed(root, 'impact').length > 0) {
+    verdict.warnings.push({ rule: 'census-unavailable', message: 'host census not supplied; census-dependent cross-scope rules skipped (degraded, not passed)' })
   }
   return verdict
 }
@@ -407,7 +491,8 @@ export function lintPlan(text: string, options: PlanLintOptions = {}): LintVerdi
   }
 
   if (root.name !== 'plan') verdict.errors.push({ rule: 'root', message: `root element must be <plan>, found <${root.name}>` })
-  if (typeof root.attrs.package !== 'string' || root.attrs.package.trim() === '') {
+  // P1 generation-gap fix: gate the legacy package-attribute rule (see lintSpec).
+  if (isLegacyGeneration(root) && (typeof root.attrs.package !== 'string' || root.attrs.package.trim() === '')) {
     verdict.errors.push({ rule: 'package', message: '<plan> requires a non-empty package attribute' })
   }
 
@@ -441,14 +526,20 @@ export function lintPlan(text: string, options: PlanLintOptions = {}): LintVerdi
     }
   }
 
-  for (const wave of collect(root, WAVE_RE)) {
-    for (const ref of taskRefs(wave)) {
-      if (!taskIds.has(ref)) verdict.errors.push({ rule: 'reference', message: `<${wave.name}> references unknown task "${ref}"` })
+  // P1 generation-gap: the wave/depends_on reference checks use the LEGACY
+  // vocabulary (WAVE-N, <task_id>, TASK-T-NNN). Run them only for legacy-generation
+  // plans; unique-tag plans use dep-T-NNN refs validated separately (P3), and hybrid
+  // formats must not get false "unknown task" errors from the legacy task-id set.
+  if (isLegacyGeneration(root)) {
+    for (const wave of collect(root, WAVE_RE)) {
+      for (const ref of taskRefs(wave)) {
+        if (!taskIds.has(ref)) verdict.errors.push({ rule: 'reference', message: `<${wave.name}> references unknown task "${ref}"` })
+      }
     }
-  }
-  for (const depends of collect(root, /^depends_on$/)) {
-    for (const ref of taskRefs(depends)) {
-      if (!taskIds.has(ref)) verdict.errors.push({ rule: 'reference', message: `depends_on references unknown task "${ref}"` })
+    for (const depends of collect(root, /^depends_on$/)) {
+      for (const ref of taskRefs(depends)) {
+        if (!taskIds.has(ref)) verdict.errors.push({ rule: 'reference', message: `depends_on references unknown task "${ref}"` })
+      }
     }
   }
 
@@ -502,6 +593,316 @@ export function lintPlan(text: string, options: PlanLintOptions = {}): LintVerdi
       }
     } else {
       verdict.warnings.push({ rule: 'spec-subset', message: 'spec text not provided; component-subset check skipped' })
+    }
+  }
+
+  // P1 census-incomplete (PLAN lint): plan <deletes>/<renames> ⊆ spec-pinned set.
+  if (options.census !== undefined) lintCensusIncomplete(root, verdict, options.census)
+  // P3 plan cross-scope rules (generation-neutral).
+  lintConsumerCoverage(root, verdict, options.specText)
+  lintCascadeConcentration(root, verdict, options.census?.cascadeThreshold)
+  return verdict
+}
+
+// ── P1 cross-scope rules (generation-neutral; host-supplied census) ──────────
+
+/** Shared surfaces that trigger impact-present (db/schemas, contracts, migrations). */
+const SHARED_SURFACE_RE = /(?:^|\/)(?:db\/schemas|contracts|migrations)(?:\/|$)|\.sql$|(?:^|\/)drizzle(?:\/|$)/i
+
+/** Normalize a scope name for matching: strip a leading S- and lowercase. */
+function normScope(name: string): string {
+  return name.replace(/^S-/i, '').toLowerCase()
+}
+
+/** The spec's declared <paths> entries (P-NNN <path> text). */
+function specDeclaredPaths(root: XmlNode): string[] {
+  const pathsEl = childrenNamed(root, 'paths')[0]
+  if (pathsEl === undefined) return []
+  const out: string[] = []
+  for (const entry of pathsEl.children) {
+    const value = (childrenNamed(entry, 'path')[0]?.text ?? '').trim()
+    if (value !== '') out.push(value)
+  }
+  return out
+}
+
+/** impact-present: spec <paths> touching a shared surface require <impact>. */
+function lintImpactPresent(root: XmlNode, verdict: LintVerdict): void {
+  const touchesShared = specDeclaredPaths(root).some((path) => SHARED_SURFACE_RE.test(path))
+  const hasImpact = childrenNamed(root, 'impact').length > 0
+  if (touchesShared && !hasImpact) {
+    verdict.errors.push({ rule: 'impact-present', message: 'spec <paths> touch a shared surface (db/schemas/, contracts/, migrations) but <impact> is missing' })
+  }
+  // #4 nudge: a cross-scope spec should carry the design-reasoning artifact (consequence
+  // inventory / consumer contracts / decomposition / pre-mortem). Advisory, not a hard gate.
+  if (hasImpact && childrenNamed(root, 'design').length === 0) {
+    verdict.warnings.push({ rule: 'design-reasoning-missing', message: 'cross-scope spec has <impact> but no <design> section (consequence-first / consumer-driven / strangler / pre-mortem); see design-template.xml' })
+  }
+}
+
+/** Census-dependent spec rules. The host supplies census values; lint compares only. */
+function lintCensusSpec(root: XmlNode, verdict: LintVerdict, census: CensusLintData): void {
+  if (census.refReachable === false) {
+    verdict.errors.push({ rule: 'census-ref-unreachable', message: 'pinned census ref is unreachable (shallow clone / GC)' })
+  }
+  for (const path of census.pathUnresolvable ?? []) {
+    verdict.errors.push({ rule: 'census-path-unresolvable', message: `declared delete/rename path fails resolution at baselineRef: ${path}` })
+  }
+
+  const impact = childrenNamed(root, 'impact')[0]
+  const censusEl = impact === undefined ? undefined : childrenNamed(impact, 'census')[0]
+  const claimedDigest = censusEl === undefined ? undefined : (childrenNamed(censusEl, 'output-digest')[0]?.text ?? '').trim()
+  if (claimedDigest !== undefined && claimedDigest !== '' && census.outputDigest !== undefined && claimedDigest !== census.outputDigest) {
+    verdict.errors.push({ rule: 'census-stale', message: `claimed census digest ${claimedDigest.slice(0, 12)} ≠ host re-computation ${census.outputDigest.slice(0, 12)} at the pinned ref — re-census + re-approval required` })
+  }
+
+  const dispositionByScope = new Map<string, string>()
+  if (impact !== undefined) {
+    for (const scopeNode of impact.children.filter((child) => /^S-/.test(child.name))) {
+      const disposition = (childrenNamed(scopeNode, 'disposition')[0]?.text ?? '').trim()
+      dispositionByScope.set(normScope(scopeNode.name), disposition)
+    }
+  }
+
+  const perScope = census.perScope ?? []
+  for (const consumer of perScope) {
+    if (consumer.hardCount <= 0) continue
+    const disposition = dispositionByScope.get(normScope(consumer.scope))
+    if (disposition === 'verified-untouched') {
+      verdict.errors.push({ rule: 'untouched-contradicted', message: `scope ${consumer.scope} declared verified-untouched but the host census found ${consumer.hardCount} hard edge(s)` })
+    }
+    if (disposition !== 'cover-in-plan' && disposition !== 'defer-to-program') {
+      verdict.errors.push({ rule: 'census-impact-coverage', message: `host-census consumer scope ${consumer.scope} (${consumer.hardCount} hard edges) is not in <impact> as cover-in-plan/defer-to-program` })
+    }
+  }
+
+  const threshold = census.fanoutThreshold ?? 3
+  const fanout = perScope.filter((consumer) => consumer.hardCount > 0).length
+  if (fanout >= threshold) {
+    // The gate forces a decomposition choice. A declared program satisfies it — do not
+    // fire when the spec already declares decomposition=program + a program path (found
+    // in the live dry-run: the gate fired even with a valid program).
+    const decomposition = (impact?.children.find((child) => child.name === 'decomposition')?.text ?? '').trim()
+    const programPath = (impact?.children.find((child) => child.name === 'program')?.text ?? '').trim()
+    const hasProgram = decomposition === 'program' && programPath !== ''
+    if (!hasProgram) {
+      const finding: LintFinding = { rule: 'cross-scope-fanout', message: `fan-out ${fanout} production consumer scopes ≥ threshold ${threshold} (cross_scope_cascade); program decomposition required in ERROR mode` }
+      if ((census.fanoutMode ?? 'warn') === 'error') verdict.errors.push(finding)
+      else verdict.warnings.push(finding)
+    }
+  }
+}
+
+/** census-incomplete (PLAN lint): plan <deletes>/<renames> ⊆ spec-pinned census set. */
+function lintCensusIncomplete(planRoot: XmlNode, verdict: LintVerdict, census: CensusLintData): void {
+  const specSet = census.specCensusSet
+  if (specSet === undefined) return
+  const specSymbols = new Set(specSet.symbols.map((symbol) => symbol.toLowerCase()))
+  const specPaths = new Set(specSet.paths)
+  for (const entry of collect(planRoot, /^D-\d+$/)) {
+    const path = (childrenNamed(entry, 'path')[0]?.text ?? '').trim()
+    const symbol = (childrenNamed(entry, 'symbol')[0]?.text ?? '').trim()
+    if (path !== '' && !specPaths.has(path)) {
+      verdict.errors.push({ rule: 'census-incomplete', message: `plan deletes path ${path} is absent from the spec-pinned census set` })
+    }
+    if (symbol !== '' && !specSymbols.has(symbol.toLowerCase())) {
+      verdict.errors.push({ rule: 'census-incomplete', message: `plan deletes symbol ${symbol} is absent from the spec-pinned census set` })
+    }
+  }
+  for (const entry of collect(planRoot, /^R-\d+$/)) {
+    const from = (childrenNamed(entry, 'from')[0]?.text ?? '').trim()
+    if (from !== '' && !specPaths.has(from) && !specSymbols.has(from.toLowerCase())) {
+      verdict.errors.push({ rule: 'census-incomplete', message: `plan renames from ${from} is absent from the spec-pinned census set` })
+    }
+  }
+}
+
+// ── P3 plan/program cross-scope rules (generation-neutral) ───────────────────
+
+/**
+ * consumer-coverage (PLAN lint): every spec <impact> consumer scope (disposition
+ * cover-in-plan / defer-to-program) maps to ≥1 plan task <scope> or a consumer-coverage
+ * entry (covered-by / deferral-target). Reads the sibling spec via host-supplied specText.
+ */
+function lintConsumerCoverage(planRoot: XmlNode, verdict: LintVerdict, specText: string | undefined): void {
+  if (specText === undefined) return
+  let spec: XmlNode
+  try {
+    spec = parseXmlLite(specText)
+  } catch {
+    return
+  }
+  const impact = childrenNamed(spec, 'impact')[0]
+  if (impact === undefined) return
+  const consumerScopes: string[] = []
+  for (const scopeNode of impact.children.filter((child) => /^S-/.test(child.name))) {
+    const disposition = (childrenNamed(scopeNode, 'disposition')[0]?.text ?? '').trim()
+    if (disposition === 'cover-in-plan' || disposition === 'defer-to-program') consumerScopes.push(normScope(scopeNode.name))
+  }
+  if (consumerScopes.length === 0) return
+
+  const taskScopes = new Set<string>()
+  for (const task of collect(planRoot, /^T-\d{3}$/)) {
+    const scope = (childrenNamed(task, 'scope')[0]?.text ?? '').trim()
+    if (scope !== '') taskScopes.add(normScope(scope))
+  }
+  const coveredScopes = new Set<string>()
+  const coverage = childrenNamed(planRoot, 'consumer-coverage')[0]
+  if (coverage !== undefined) {
+    for (const entry of coverage.children.filter((child) => /^CC-/.test(child.name))) {
+      const scope = (childrenNamed(entry, 'scope')[0]?.text ?? '').trim()
+      const hasDisposition = childrenNamed(entry, 'covered-by').length > 0 || childrenNamed(entry, 'deferral-target').length > 0
+      if (scope !== '' && hasDisposition) coveredScopes.add(normScope(scope))
+    }
+  }
+  for (const scope of consumerScopes) {
+    if (!taskScopes.has(scope) && !coveredScopes.has(scope)) {
+      verdict.errors.push({ rule: 'consumer-coverage', message: `spec impact consumer scope ${scope} is not covered by any plan task <scope> or consumer-coverage deferral` })
+    }
+  }
+}
+
+/**
+ * cascade-concentration (PLAN lint): a single task must not concentrate a large
+ * shared-surface deletion/rename (the CURRICULUM T-023 anti-pattern). Counts D-NNN
+ * paths + R-NNN from-paths matching a shared surface per task. Threshold provisional
+ * (pending archive calibration).
+ */
+const CASCADE_CONCENTRATION_THRESHOLD = 5
+function lintCascadeConcentration(planRoot: XmlNode, verdict: LintVerdict, threshold: number = CASCADE_CONCENTRATION_THRESHOLD): void {
+  for (const task of collect(planRoot, /^T-\d{3}$/)) {
+    let count = 0
+    for (const entry of collect(task, /^D-\d+$/)) {
+      const path = (childrenNamed(entry, 'path')[0]?.text ?? '').trim()
+      if (path !== '' && SHARED_SURFACE_RE.test(path)) count += 1
+    }
+    for (const entry of collect(task, /^R-\d+$/)) {
+      const from = (childrenNamed(entry, 'from')[0]?.text ?? '').trim()
+      if (from !== '' && SHARED_SURFACE_RE.test(from)) count += 1
+    }
+    if (count >= threshold) {
+      verdict.errors.push({ rule: 'cascade-concentration', message: `task ${task.name} concentrates ${count} shared-surface deletions/renames (≥${threshold}); split across tasks/waves or declare a program` })
+    }
+  }
+}
+
+/**
+ * program-dag (PROGRAM lint): the package DAG is acyclic, every dep-P ref resolves to
+ * a declared P node, and every charter component is owned by exactly one package.
+ */
+export function lintProgram(text: string, options: SpecLintOptions = {}): LintVerdict {
+  const verdict: LintVerdict = { errors: [], warnings: [] }
+  let root: XmlNode
+  try {
+    root = parseXmlLite(text)
+  } catch (error) {
+    return malformed(verdict, error)
+  }
+  if (root.name !== 'program') verdict.errors.push({ rule: 'root', message: `root element must be <program>, found <${root.name}>` })
+  const status = lifecycleStatus(root, options.status)
+  if (!STATUSES.has(status)) verdict.errors.push({ rule: 'status', message: `status must be draft|approved|applied, found "${status}"` })
+  checkApproval(verdict, 'program.xml', status, options)
+
+  const packagesEl = childrenNamed(root, 'packages')[0]
+  const packages = packagesEl === undefined ? [] : packagesEl.children.filter((child) => /^P-/.test(child.name))
+  const packageIds = new Set(packages.map((pkg) => pkg.name))
+
+  const edges = new Map<string, string[]>()
+  for (const pkg of packages) {
+    const deps: string[] = []
+    for (const dep of collect(pkg, /^dep-P-/)) {
+      const ref = dep.name.replace(/^dep-/, '')
+      if (!packageIds.has(ref)) verdict.errors.push({ rule: 'reference', message: `package ${pkg.name} depends on unknown package ${ref}` })
+      deps.push(ref)
+    }
+    edges.set(pkg.name, deps)
+  }
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const visit = (id: string): string[] | undefined => {
+    if (visiting.has(id)) return [id]
+    if (visited.has(id)) return undefined
+    visiting.add(id)
+    for (const dep of edges.get(id) ?? []) {
+      if (!packageIds.has(dep)) continue
+      const cycle = visit(dep)
+      if (cycle !== undefined) return [id, ...cycle]
+    }
+    visiting.delete(id)
+    visited.add(id)
+    return undefined
+  }
+  for (const id of edges.keys()) {
+    const cycle = visit(id)
+    if (cycle !== undefined) {
+      verdict.errors.push({ rule: 'program-dag', message: `package dependency cycle: ${cycle.join(' -> ')}` })
+      break
+    }
+  }
+
+  const ownedBy = new Map<string, string>()
+  for (const pkg of packages) {
+    const owns = (childrenNamed(pkg, 'owns-components')[0]?.text ?? '').trim()
+    for (const component of owns.split(',').map((item) => item.trim()).filter((item) => item !== '')) {
+      const prior = ownedBy.get(component)
+      if (prior !== undefined) verdict.errors.push({ rule: 'program-dag', message: `component ${component} owned by both ${prior} and ${pkg.name}` })
+      else ownedBy.set(component, pkg.name)
+    }
+  }
+  return verdict
+}
+
+// ── P4 addendum read-side (unresolved-addendum) ───────────────────────────────
+
+/** Terminal addendum statuses (§12.2); anything else blocks execution. */
+const ADDENDUM_TERMINAL = new Set(['resolved', 'resolved-deferred', 'resolved-spawned'])
+
+/**
+ * unresolved-addendum (P4 read-side): any ADD-NNN whose status is not terminal blocks
+ * validate-plan. An addendum recorded by a dead executor must not rot silently — the
+ * next invocation sees it here. Host reads impact-addendum.xml and passes the text in.
+ */
+export function lintAddendum(text: string, _options: SpecLintOptions = {}): LintVerdict {
+  const verdict: LintVerdict = { errors: [], warnings: [] }
+  let root: XmlNode
+  try {
+    root = parseXmlLite(text)
+  } catch (error) {
+    return malformed(verdict, error)
+  }
+  if (root.name !== 'impact-addendum') verdict.errors.push({ rule: 'root', message: `root element must be <impact-addendum>, found <${root.name}>` })
+  for (const entry of root.children.filter((child) => /^ADD-/.test(child.name))) {
+    const status = (childrenNamed(entry, 'status')[0]?.text ?? '').trim()
+    if (!ADDENDUM_TERMINAL.has(status)) {
+      verdict.errors.push({ rule: 'unresolved-addendum', message: `${entry.name} status "${status || 'missing'}" is not terminal (resolved/resolved-deferred/resolved-spawned); resolve before executing` })
+    }
+  }
+  return verdict
+}
+
+// ── invariant-verification read-side (unverified-invariant) ──────────────────
+
+/** Discharged invariant-verification statuses; anything else is a pending obligation. */
+const INVARIANT_DISCHARGED = new Set(['verified', 'waived'])
+
+/**
+ * unverified-invariant: any IV-NNN in invariant-verification.xml whose status is not
+ * discharged (verified/waived) blocks plan-close. A behavioral GRACE invariant surfaced as
+ * at-risk becomes a tracked obligation; it cannot be silently ignored. Pure text check.
+ */
+export function lintInvariantVerification(text: string, _options: SpecLintOptions = {}): LintVerdict {
+  const verdict: LintVerdict = { errors: [], warnings: [] }
+  let root: XmlNode
+  try {
+    root = parseXmlLite(text)
+  } catch (error) {
+    return malformed(verdict, error)
+  }
+  if (root.name !== 'invariant-verification') verdict.errors.push({ rule: 'root', message: `root element must be <invariant-verification>, found <${root.name}>` })
+  for (const entry of root.children.filter((child) => /^IV-/.test(child.name))) {
+    const status = (childrenNamed(entry, 'status')[0]?.text ?? '').trim()
+    if (!INVARIANT_DISCHARGED.has(status)) {
+      verdict.errors.push({ rule: 'unverified-invariant', message: `${entry.name} status "${status || 'missing'}" is not discharged (verified/waived); the behavioral invariant needs an executable test or an explicit waiver` })
     }
   }
   return verdict

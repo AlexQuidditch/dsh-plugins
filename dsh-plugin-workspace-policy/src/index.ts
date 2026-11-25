@@ -25,9 +25,11 @@
  * which keeps only a warning) changes nothing. Master sessions are only
  * touched when they start fresh, route-less, and with no explicit user
  * selection; anything the user switches in the composer passes through
- * untouched. The workspace policy for workers is deliberately absolute — it
- * overrides preset `agentOptions` pins — and is documented as such in the
- * README.
+ * untouched. `model.workers` is the default for delegated children whose
+ * route was inherited from the parent — a route the caller explicitly
+ * requested (per-call `subagent` provider/model or a preset `agentOptions`
+ * pin) is left alone, and a `model.presets` hit for the child's own preset
+ * outranks both. See the README for the precedence table.
  *
  * Namespace plugin shape (named exports; no default export).
  */
@@ -145,6 +147,12 @@ interface AgentLike {
     }
     requestHeader(): unknown
   }
+  /** Creation options (`AgentOptions`): the route fallback before any selection or header. */
+  options?: {
+    provider?: string
+    model?: string
+    reasoningEffort?: string
+  }
   /** Present on 0.2.2 hosts; absent on 0.1, where the plugin is inert. */
   model?: AgentModelLike
 }
@@ -168,10 +176,14 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
     log: input.log ?? DEFAULTS.log,
   }
 
-  const llm = ctx.get('llm') as LlmLike | undefined
-  const workspaceRegistry = ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined
-  const sessionProjections = ctx.get('sessionProjections') as SessionProjectionsLike | undefined
-  const agents = ctx.get('agents') as AgentsLike | undefined
+  // Services are resolved lazily at use time, never captured at apply time: a
+  // plugin without service dependencies may be mounted before the providing
+  // fiber finishes its async startup, and a snapshot taken then would stay
+  // undefined for the life of the process.
+  const llmOf = () => ctx.get('llm') as LlmLike | undefined
+  const workspaceRegistryOf = () => ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined
+  const sessionProjectionsOf = () => ctx.get('sessionProjections') as SessionProjectionsLike | undefined
+  const agentsOf = () => ctx.get('agents') as AgentsLike | undefined
 
   const store = new WorkspacePolicyStore({
     configFileName: settings.configFileName,
@@ -210,6 +222,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
 
   /** Durable explicit model selection not yet consumed by a request header. */
   function hasPendingUserSelection(agent: AgentLike): boolean {
+    const sessionProjections = sessionProjectionsOf()
     if (sessionProjections === undefined) return false
     try {
       const state = sessionProjections.stateOf(agent.session, 'modelSelection') as { pending?: unknown } | undefined
@@ -226,6 +239,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
    * alone would be stale.
    */
   function presetOf(agent: AgentLike): string | undefined {
+    const sessionProjections = sessionProjectionsOf()
     if (sessionProjections === undefined) return undefined
     try {
       const state = sessionProjections.stateOf(agent.session, 'agentPreset')
@@ -241,10 +255,57 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
     return policy.model.presets?.[presetId]
   }
 
+  /** A creation route triple from one agent's `AgentOptions`, when it names a full route. */
+  function routeFromOptions(
+    options: { provider?: string; model?: string; reasoningEffort?: string } | undefined,
+  ): { provider: string; model: string; reasoningEffort?: string } | undefined {
+    if (options === undefined) return undefined
+    if (typeof options.provider !== 'string' || options.provider.length === 0) return undefined
+    if (typeof options.model !== 'string' || options.model.length === 0) return undefined
+    return {
+      provider: options.provider,
+      model: options.model,
+      ...(typeof options.reasoningEffort === 'string' && options.reasoningEffort.length > 0
+        ? { reasoningEffort: options.reasoningEffort }
+        : {}),
+    }
+  }
+
+  /**
+   * True when this delegated child was created with a route explicitly
+   * requested by the caller — a per-call `subagent` `provider`/`model` or a
+   * preset `agentOptions` pin — instead of inheriting the parent's live route.
+   *
+   * Mirrors `resolveChildAgentOptions` in `dsh-subagent`: the child's creation
+   * options are the parent's delegation route merged with the request, so a
+   * difference in provider, model, or effort is the only observable trace of
+   * an explicit request. A child whose requested route happens to equal the
+   * parent's route is indistinguishable from inheritance and keeps the
+   * `model.workers` default.
+   */
+  function childRouteWasRequested(agent: AgentLike): boolean {
+    if (!isWorkerAgent(agent)) return false
+    const agents = agentsOf()
+    const parentId = agent.session.header.parentSession
+    const parent = agents !== undefined && typeof parentId === 'string' && parentId.length > 0
+      ? agents.get(parentId)
+      : undefined
+    const child = routeFromOptions(agent.options)
+    const header = parent?.session.requestHeader() as
+      | { config?: { provider?: string; model?: string; reasoningEffort?: string } }
+      | undefined
+    const base = routeFromOptions(header?.config) ?? routeFromOptions(parent?.options)
+    if (child === undefined || base === undefined) return false
+    return child.provider !== base.provider
+      || child.model !== base.model
+      || (child.reasoningEffort ?? undefined) !== (base.reasoningEffort ?? undefined)
+  }
+
   async function workspaceRootFor(cwd: string): Promise<string> {
     let promise = rootCache.get(cwd)
     if (promise === undefined) {
       promise = (async () => {
+        const workspaceRegistry = workspaceRegistryOf()
         if (workspaceRegistry !== undefined) {
           try {
             const workspace = await workspaceRegistry.resolveByPath(cwd)
@@ -271,6 +332,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
 
   /** Registered provider ids, or `null` when the list is unavailable. */
   function registeredProviders(): ReadonlySet<string> | null {
+    const llm = llmOf()
     if (llm === undefined) return null
     try {
       return new Set(llm.listProviders().map((entry) => entry.id))
@@ -280,6 +342,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
   }
 
   async function modelFactsFor(provider: string, model: string): Promise<ModelFacts | null> {
+    const llm = llmOf()
     if (llm === undefined) return null
     try {
       const info = await llm.resolveModelInfo(provider, model)
@@ -296,7 +359,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
     route: { provider: string; model: string },
     source: RouteSelection | undefined,
   ): Promise<RequestGuards> {
-    if (llm === undefined) return NO_GUARDS
+    if (llmOf() === undefined) return NO_GUARDS
     const providers = registeredProviders()
     const target = await modelFactsFor(route.provider, route.model)
     const sourceFacts = source === undefined ? null : await modelFactsFor(source.provider, source.model)
@@ -382,6 +445,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
         hasLoggedHeader: agent.session.requestHeader() !== undefined,
         hasPendingUserSelection: hasPendingUserSelection(agent),
         presetRoute: presetRouteFor(slot.policy, presetOf(agent)),
+        explicitChildRoute: childRouteWasRequested(agent),
       })
       if (pick.kind === 'passthrough') {
         if (settings.log && pick.reason !== 'already-decided') {
@@ -416,7 +480,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
 
   presetOn('agent-preset/selected', async (sessionId: string, presetId: string) => {
     try {
-      const agent = agents?.get?.(sessionId)
+      const agent = agentsOf()?.get?.(sessionId)
       if (agent === undefined || modelOf(agent) === null) return
       if (agent.session.requestHeader() !== undefined) return
       if (hasPendingUserSelection(agent)) return

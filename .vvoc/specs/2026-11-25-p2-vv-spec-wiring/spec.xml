@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P2 package spec — dogfoods the P0 schema (paths + program membership).
+     Part of program .vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml (P-P2).
+     Design source: hive-research/vv-cross-scope-impact-rd.md §4.2/§4.3/§14; P0 templates.
+     P2 wires the vv-spec skill to produce paths/impact/program artifacts and use
+     spec_guard_census. Modifies SKILL.md only (additive sections). No shared-surface
+     deletion, so impact-present is not triggered for P2 itself. -->
+<spec>
+  <status>approved</status>
+  <goal>Wire the vv-spec skill to the P0 schema + P1 enforcement: add the SCOPE_IMPACT interview step (census-driven horizontal fan-out assessment, tier-gated, work-item reference check, implicit-premises surfacing), the decomposition gate (program vs recorded single-package choice, WARN/ERROR modes), and the paths/impact/program artifact composition in spec_document_format + self_review + task.</goal>
+  <architecture>CLASSIFY_BOUNDARY: domain-only. Change confined to agent-presets/skills/vv-spec/SKILL.md (additive sections + format/self-review/task updates). The skill composes the P0 templates (spec-template core + paths-template + impact-template + program-template) and calls the P1 spec_guard_census / spec_guard_lint tools. No plugin code or profile change.</architecture>
+  <program>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</program>
+  <package-id>P-P2</package-id>
+  <paths>
+    <P-001><path>agent-presets/skills/vv-spec/SKILL.md</path><role>modify</role></P-001>
+  </paths>
+  <components>
+    <C-SPEC-SKILL>
+      <name>vv-spec skill wiring</name>
+      <responsibility>SCOPE_IMPACT interview step + decomposition gate + paths/impact/program composition + self-review impact checks + task summary</responsibility>
+      <depends-on></depends-on>
+    </C-SPEC-SKILL>
+  </components>
+  <testing>
+    <strategy>Skill frontmatter intact; referenced templates (paths/impact/program) parse (P0 verified); the new sections instruct census-driven (not hand-written) fan-out, host/engine split, tier gating, WARN/ERROR gate modes. Behavioral validation: a cross-scope spec interview produces paths + impact + (when gate fires) a program, and spec_guard_lint reports the cross-scope verdicts.</strategy>
+    <coverage>SCOPE_IMPACT trigger + census usage + untouched verification + work-item check; decomposition gate program/recorded-choice; artifact composition; self-review.</coverage>
+  </testing>
+  <non-goals>
+    <NG-001>vv-plan wiring (deletes/consumer-coverage/scope-barrier) — P3.</NG-001>
+    <NG-002>Execution feedback — P4.</NG-002>
+    <NG-003>cross-scope-fanout ERROR flip — after archive calibration.</NG-003>
+    <NG-004>Plugin code / profile change — P2 is skill-only.</NG-004>
+  </non-goals>
+</spec>

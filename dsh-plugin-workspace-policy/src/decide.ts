@@ -95,6 +95,7 @@ export type PassthroughReason =
   | 'user-selection-pending'
   | 'no-default-route'
   | 'no-workers-route'
+  | 'explicit-child-route'
 
 /** Result of choosing what route applies to one newly created agent. */
 export type StartupRoutePick =
@@ -117,6 +118,14 @@ export interface PickStartupRouteInput {
    * workers stay unconditional.
    */
   presetRoute?: PolicyRoute | undefined
+  /**
+   * True when a delegated child's creation route was explicitly requested by
+   * the caller (per-call `subagent` provider/model or a preset `agentOptions`
+   * pin) instead of inheriting the parent's live route. Such children keep
+   * their requested route: `model.workers` is a default for inherited routes,
+   * not an override of an explicit request.
+   */
+  explicitChildRoute?: boolean | undefined
 }
 
 /**
@@ -126,17 +135,33 @@ export interface PickStartupRouteInput {
  * Every branch marks the agent resolved — the startup decision is final, so
  * anything the user switches in the composer afterwards passes through
  * untouched (a later durable selection simply supersedes the policy's).
+ *
+ * Precedence for delegated children: a `model.presets` entry for the child's
+ * own preset wins first; then a route the caller explicitly requested (the
+ * policy leaves it alone); only an inherited route falls back to
+ * `model.workers`.
  */
 export function pickStartupRoute(input: PickStartupRouteInput): StartupRoutePick {
-  const { state, policy, isWorker, sessionSource, hasLoggedHeader, hasPendingUserSelection, presetRoute } = input
+  const {
+    state,
+    policy,
+    isWorker,
+    sessionSource,
+    hasLoggedHeader,
+    hasPendingUserSelection,
+    presetRoute,
+    explicitChildRoute,
+  } = input
 
   if (state.resolved) return { kind: 'passthrough', reason: 'already-decided' }
 
   if (isWorker) {
     state.resolved = true
-    const route = presetRoute ?? policy.model.workers
+    if (presetRoute !== undefined) return { kind: 'route', route: presetRoute, reason: 'preset-policy' }
+    if (explicitChildRoute === true) return { kind: 'passthrough', reason: 'explicit-child-route' }
+    const route = policy.model.workers
     if (route === undefined) return { kind: 'passthrough', reason: 'no-workers-route' }
-    return { kind: 'route', route, reason: presetRoute !== undefined ? 'preset-policy' : 'workers-policy' }
+    return { kind: 'route', route, reason: 'workers-policy' }
   }
 
   if (sessionSource !== 'startup') {

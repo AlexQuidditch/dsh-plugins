@@ -1,0 +1,19 @@
+<!-- paths-template.xml — P0 schema contract (vv-cross-scope-impact-rd §4.6 F5/§14.5).
+     The <paths> section is a top-level child of <spec>. It is the DETERMINISTIC
+     trigger source for rule impact-present (the spec previously had no path field;
+     tier is an interview choice never persisted, so a tier key was unevaluable).
+
+     Unique-tag, no attributes: repeating entries use P-NNN; identity in the tag name.
+     role enum: create | modify | delete. impact-present fires when any <path> touches
+     a shared surface (db/schemas/, contracts/, migrations). For delete entries, the
+     path also feeds the plan <deletes> surface and the census deletedPaths input. -->
+<paths>
+  <P-001>
+    <path></path>
+    <role>modify</role>
+  </P-001>
+  <P-002>
+    <path></path>
+    <role>delete</role>
+  </P-002>
+</paths>

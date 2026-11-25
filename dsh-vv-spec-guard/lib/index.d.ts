@@ -11,8 +11,29 @@ export interface VvSpecGuardConfig {
     approveTool?: boolean;
     /** Whether to register the spec_guard_evidence tool (§M). Default: true. */
     evidenceTool?: boolean;
+    /** Whether to register the spec_guard_census tool (P1). Default: true. */
+    censusTool?: boolean;
+    /** Whether to register the spec_guard_undeclared_deletion tool (P4). Default: true. */
+    undeclaredDeletionTool?: boolean;
+    /** Whether to register the spec_guard_stale_impact tool (P4). Default: true. */
+    staleImpactTool?: boolean;
+    /** Whether to register the spec_guard_amend_verify tool (follow-up #2). Default: true. */
+    amendVerifyTool?: boolean;
+    /** Whether to register the spec_guard_grace tool (follow-up #2 GRACE). Default: true. */
+    graceTool?: boolean;
+    /** Whether to register the spec_guard_invariant_tests tool (invariant→property-test). Default: true. */
+    invariantTestsTool?: boolean;
     /** Character cap of one logged verdict line. Default: 200. */
     verdictMaxChars?: number;
+    /** cross-scope-fanout enforcement mode (follow-up #1 calibration). 'warn' = advisory;
+     *  'error' = blocks approval unless a program is declared. Default: 'error' (calibrated
+     *  on the foundation archive; set 'warn' to disable gating). */
+    crossScopeFanoutMode?: 'warn' | 'error';
+    /** Distinct-production-consumer-scope fan-out threshold. Default: 3 (calibrated). */
+    crossScopeFanoutThreshold?: number;
+    /** Shared-surface deletions/renames in one task before cascade-concentration fires.
+     *  Default: 5 (calibrated). */
+    cascadeConcentrationThreshold?: number;
 }
 /** Structural fs/observed payload: target carries a display path. */
 interface ObservedTarget {

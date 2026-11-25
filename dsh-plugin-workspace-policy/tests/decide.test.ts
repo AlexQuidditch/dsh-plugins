@@ -155,6 +155,19 @@ describe('pickStartupRoute — workers', () => {
     const pick = startupPick(state, { isWorker: true, hasLoggedHeader: true, presetRoute: PRESET_ROUTE })
     expect(pick).toEqual({ kind: 'route', route: PRESET_ROUTE, reason: 'preset-policy' })
   })
+
+  it('leaves an explicitly requested child route alone', () => {
+    const state = freshState('resume')
+    const pick = startupPick(state, { isWorker: true, explicitChildRoute: true })
+    expect(pick).toEqual({ kind: 'passthrough', reason: 'explicit-child-route' })
+    expect(state.resolved).toBe(true)
+  })
+
+  it('still applies a model.presets entry over an explicitly requested child route', () => {
+    const state = freshState('resume')
+    const pick = startupPick(state, { isWorker: true, explicitChildRoute: true, presetRoute: PRESET_ROUTE })
+    expect(pick).toEqual({ kind: 'route', route: PRESET_ROUTE, reason: 'preset-policy' })
+  })
 })
 
 describe('resolveRouteSelection', () => {

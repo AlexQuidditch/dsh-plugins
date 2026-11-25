@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsh-vv-spec-guard/schemas/census-contract.json",
+  "title": "spec_guard_census tool contract (P0 seam)",
+  "description": "Input/output contract + semantics for the host census tool. P0 freezes this contract; P1 implements it. Source of truth: hive-research/vv-cross-scope-impact-rd.md §14.5 (round-6), §14.3, §14.1, §20. The census is a HOST tool (typescript runtime dep + git worktree + filesystem); the lint.ts verdict engine stays zero-dependency and only compares host-supplied values.",
+  "x-contract-version": 1,
+  "x-owner": "P1 (dsh-vv-spec-guard)",
+  "x-status": "P0 frozen contract — not yet implemented",
+  "input": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["repoRoot", "baselineRef", "scopeDir", "deletedSymbols", "deletedPaths"],
+    "properties": {
+      "repoRoot": { "type": "string", "description": "Absolute git root of the repository holding the .vvoc package." },
+      "baselineRef": { "type": "string", "description": "Committed OID (resolve relative revs like af92a878^ via git rev-parse FIRST). Immutable pin; the worktree is materialized here." },
+      "currentRef": { "type": "string", "description": "Optional current OID for stale-impact drift comparison (baseline vs current). Requires a second program." },
+      "scopeDir": { "type": "string", "description": "Package/repo ROOT (repo-relative), NOT src/backend, so schema/contract barrel consumers are visible. Per-scope aggregation is downstream." },
+      "ownerScope": { "type": "string", "description": "Scope declaring the deleted symbol; excluded from consumer fan-out. If omitted, the host resolves the symbol's declaration scope at baselineRef." },
+      "deletedSymbols": { "type": "array", "items": { "type": "string" }, "description": "Symbols being removed. PLAN-DERIVED from plan <deletes>/<renames>; census-incomplete checks plan ⊆ spec-pinned set." },
+      "deletedPaths": { "type": "array", "items": { "type": "string" }, "description": "Files being removed. Host extracts each path's exported symbols via TS API at baselineRef. A path that fails resolution → census-path-unresolvable error." },
+      "renamedSymbols": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["from", "to"], "properties": { "from": { "type": "string" }, "to": { "type": "string" } } }, "description": "From plan <renames>. Census queries the FROM (old) name consumers at baseline; the TO target need not exist at baseline." },
+      "renamedPaths": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["from", "to"], "properties": { "from": { "type": "string" }, "to": { "type": "string" } } } }
+    }
+  },
+  "output": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["resolvedOid", "analyzer", "resolutionStrategy", "perScope", "outputDigest"],
+    "properties": {
+      "resolvedOid": { "type": "string", "description": "git rev-parse of baselineRef (not the spelled ref)." },
+      "analyzer": {
+        "type": "object", "additionalProperties": false, "required": ["name", "version"],
+        "properties": { "name": { "const": "typescript" }, "version": { "type": "string", "description": "Exact ts.version, no caret. Part of the digest: a version change alters edges." } }
+      },
+      "resolutionStrategy": { "type": "string", "description": "How @foundation/* workspace links were materialized (mirrored-pnpm-links | injected-resolver). Part of the digest. Wholesale live-node_modules symlink is FORBIDDEN (breaks ref-pinning)." },
+      "perScope": {
+        "type": "array",
+        "description": "Production consumer scopes (owner scope excluded; test/generated excluded from fan-out).",
+        "items": {
+          "type": "object", "additionalProperties": false, "required": ["scope", "files", "edges", "hardCount"],
+          "properties": {
+            "scope": { "type": "string", "description": "First segment under src/backend; src/db→S-DB, src/contracts→S-CONTRACTS, other src/<seg>→S-PKG-<SEG>." },
+            "files": { "type": "array", "items": { "type": "string" }, "description": "Repo-relative paths (sorted, no ref prefix, NO line) of files with >=1 hard edge. NOT all files in the scope." },
+            "edges": {
+              "type": "array",
+              "items": {
+                "type": "object", "additionalProperties": false, "required": ["id", "kind", "source", "target"],
+                "properties": {
+                  "id": { "type": "string", "description": "E-NNN unique identity." },
+                  "kind": { "enum": ["runtime-import", "type-import", "schema-barrel", "contract-barrel"] },
+                  "source": { "type": "string", "description": "Repo-relative file path, NO line number (line shifts cause false stale-impact drift)." },
+                  "target": { "type": "string", "description": "Deleted/renamed symbol name." },
+                  "displayLine": { "type": "integer", "description": "Non-digested display field." }
+                }
+              }
+            },
+            "hardCount": { "type": "integer", "description": "|edges with kind ∈ {runtime-import, type-import, schema-barrel, contract-barrel}| — all four are hard for contradiction AND fan-out (§14.1). Closeout depth differs (type-import compile-only)." }
+          }
+        }
+      },
+      "advisory": {
+        "type": "array",
+        "description": "Test/generated edges (reported, NOT threshold-driving). Requires building the program from an explicit file list including tests, since the domain tsconfig excludes them.",
+        "items": { "type": "object" }
+      },
+      "outputDigest": { "type": "string", "description": "sha256 of the canonical JSON form (§14.3): {schemaVersion, analyzer, resolutionStrategy, resolvedOid, scopeDir, ownerScope, sortedDeletedSymbols, sortedDeletedPaths, sortedRenamedPairs, perScope}. Code-point sort; canonical JSON (sorted keys, no whitespace, fixed escaping); schemaVersion bump invalidates prior digests." }
+    }
+  },
+  "semantics": {
+    "materialization": "git worktree add --detach <uniqueTmp> <resolvedOid>. Worktree has ONLY tracked files (no node_modules). Mirror pnpm per-entry RELATIVE symlinks into the worktree OR inject a resolver mapping @foundation/<pkg>/<sub> → <worktree>/packages/platform/<pkg>/<sub> from pnpm-workspace.yaml globs. FORBID symlinking the live checkout node_modules wholesale (resolves to LIVE tree, breaks ref-pinning). lib.es*.d.ts comes from the host typescript install. projects/* are gitlinks (worktree empty — v1 submodule deferral); packages/platform/* are main-repo trees (present).",
+    "resolution": "ts.createProgram with the worktree tsconfig (moduleResolution: bundler honored). Named-binding extraction, barrel re-export traversal (export * from), workspace package.json export-map subpaths.",
+    "diUsage": "runtime-import = a reference in a non-elided value position OR a parameter/property type of a DECORATED class when emitDecoratorMetadata is on (Nest DI injects via constructor-param type annotations — a RUNTIME edge, not type-only). type-import = import type / elided type-only reference. Fixture: examinations/exam.controller.ts = runtime-import.",
+    "edgeKindPrecedence": "schema-barrel = deleted symbol declared under db/schemas (Drizzle table); contract-barrel = deleted symbol under contracts (oRPC slice). Barrel kind takes precedence over runtime-import by declaring-module path origin.",
+    "hostEngineSplit": "The HOST recomputes the census and passes censusDigest/censusStale into SpecLintOptions (like §K currentSha256). lint ONLY compares; it never re-runs the census (purity invariant lint.ts:183-184).",
+    "lifecycle": "Unique tmp dir per run; try/finally with git worktree remove --force + git worktree prune; per-repo lock keyed by (resolvedOid, scopeDir) for concurrent spec/plan/pre-flight runs.",
+    "perfCache": "createProgram ~2s / getTypeChecker ~0.5s over the domain (measured); ~10-30s per full run. Cache output by (resolvedOid, deletedSet, scopeDir, tsVersion, resolutionStrategy). stale-impact needs two programs (baseline + current).",
+    "acceptance": "Witness assertion (qualitative, robust): examinations ∈ runtime-import consumers of SchoolAuthorizationService at af92a878^ (DI constructor-param edge). Exact production scope/file count is census-tool-derived (symbol-only ≈5 scopes / 6 import-binding files), NOT a grep mention count. Full deletion surface via deletedPaths captures barrel consumers."
+  }
+}

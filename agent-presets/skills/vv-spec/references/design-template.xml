@@ -1,0 +1,55 @@
+<!-- design-template.xml — #4 design-reasoning artifact (vv-cross-scope-impact-rd #4).
+     A top-level <design> section of spec.xml, REQUIRED for cross-scope changes (spec has
+     <impact>). Captures the design REASONING that prevents cascades: consequence inventory,
+     consumer contracts, decomposition strategy (strangler vs big-bang), and a pre-mortem.
+     Unique-tag, no attributes: CC-NNN consumer contracts; generic wrappers stay generic.
+
+     This is the generative half (reason about consequences BEFORE committing); the census /
+     GRACE / invariant gates are the verifying half. Evidence sources: spec_guard_census
+     (structural fan-out), spec_guard_grace (semantic at-risk invariants), interview
+     (behavioral implicit premises). -->
+<design>
+  <!-- Consequence-first: enumerate consequences BEFORE choosing the approach. Each must be
+       accounted for (cover / defer / redesign) — none silently ignored. -->
+  <consequence-inventory>
+    <!-- structural: from spec_guard_census — who imports/consumes the changed surface -->
+    <structural></structural>
+    <!-- semantic: from spec_guard_grace at-risk — which GRACE invariants mention the change -->
+    <semantic></semantic>
+    <!-- behavioral: implicit premises riding the wiring (interview-surfaced rules) -->
+    <behavioral></behavioral>
+    <!-- future: what this design makes harder later (lock-in, migration debt) -->
+    <future></future>
+  </consequence-inventory>
+
+  <!-- Consumer-driven: design the shared surface FROM consumer needs, not producer
+       convenience. One contract per consumer scope (from the census). -->
+  <consumer-contracts>
+    <CC-001>
+      <consumer></consumer>
+      <needs></needs>
+      <satisfied-by></satisfied-by>
+    </CC-001>
+  </consumer-contracts>
+
+  <!-- Decomposition strategy. For shared-surface replacement/refactor, prefer strangler
+       (build-alongside → migrate-per-consumer → census-gated demolition) over big-bang when
+       coexistence is feasible. Big-bang only when atomic / coexistence impossible, and then
+       with the full consequence inventory. -->
+  <decomposition>
+    <!-- strangler | big-bang | single-package -->
+    <strategy></strategy>
+    <rationale></rationale>
+    <!-- for strangler: build-alongside step, per-consumer migration steps, final
+         census-gated demolition (retire only when census shows zero consumers) -->
+    <steps></steps>
+  </decomposition>
+
+  <!-- Design pre-mortem: assume this design ALREADY caused a cascade in execute — what was
+       the missed consequence? Adversarial lens (vv-review) before approval. -->
+  <premortem>
+    <assumed-failure></assumed-failure>
+    <missed-consequences></missed-consequences>
+    <resolution></resolution>
+  </premortem>
+</design>

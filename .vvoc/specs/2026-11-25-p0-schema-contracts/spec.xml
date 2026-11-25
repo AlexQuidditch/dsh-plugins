@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P0 package spec — dogfoods spec-template.xml + the new paths-template.xml (P0 schema).
+     Part of program .vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml (P-P0).
+     Design source: hive-research/vv-cross-scope-impact-rd.md §14.5/§19/§20.
+     P0 is additive schema contracts only; no shared-surface deletion, so impact-present
+     is not triggered and no <impact> census is required (fan-out 0). -->
+<spec>
+  <status>approved</status>
+  <goal>Freeze the P0 schema-contract seam for the vv cross-scope impact extension: four artifact XML templates (impact, paths, program, plan-deletes), the spec_guard_census host tool contract, the lint rule registry, and a seam README — plus this dogfood program and package spec. P1-P4 consume these schemas; P0 implements no enforcement.</goal>
+  <architecture>CLASSIFY_BOUNDARY: domain-only. All changes are additive files within the dsh-plugins workspace (agent-presets skill references + dsh-vv-spec-guard/schemas + .vvoc artifacts). No packages/platform surface, no existing SKILL.md / plugin code / profile modification. The seam separates agent-facing XML artifact templates (consumed by P2/P3 skills) from host-facing JSON tool contracts (consumed by P1 spec-guard). The lint.ts verdict engine stays zero-dependency; the census is a separate host tool contract.</architecture>
+  <program>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</program>
+  <package-id>P-P0</package-id>
+  <paths>
+    <P-001><path>agent-presets/skills/vv-spec/references/impact-template.xml</path><role>create</role></P-001>
+    <P-002><path>agent-presets/skills/vv-spec/references/paths-template.xml</path><role>create</role></P-002>
+    <P-003><path>agent-presets/skills/vv-spec/references/program-template.xml</path><role>create</role></P-003>
+    <P-004><path>agent-presets/skills/vv-plan/references/deletes-template.xml</path><role>create</role></P-004>
+    <P-010><path>agent-presets/skills/vv-plan/references/renames-template.xml</path><role>create</role></P-010>
+    <P-005><path>dsh-vv-spec-guard/schemas/census-contract.json</path><role>create</role></P-005>
+    <P-006><path>dsh-vv-spec-guard/schemas/lint-rules.json</path><role>create</role></P-006>
+    <P-007><path>dsh-vv-spec-guard/schemas/README.md</path><role>create</role></P-007>
+    <P-008><path>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</path><role>create</role></P-008>
+    <P-009><path>.vvoc/specs/2026-11-25-p0-schema-contracts/spec.xml</path><role>create</role></P-009>
+  </paths>
+  <components>
+    <C-ARTIFACT-SCHEMAS>
+      <name>Artifact XML templates</name>
+      <responsibility>impact / paths / program / plan-deletes templates following unique-tag, no-attribute convention; fill-in placeholders matching spec-template.xml style</responsibility>
+      <depends-on>C-HOST-CONTRACTS</depends-on>
+    </C-ARTIFACT-SCHEMAS>
+    <C-HOST-CONTRACTS>
+      <name>Host tool contracts</name>
+      <responsibility>census-contract.json (input/output JSON schema + worktree/DI/digest/partition/lifecycle semantics) + lint-rules.json (rule names + when + owner + mode + inputs) + README seam manifest</responsibility>
+      <depends-on></depends-on>
+    </C-HOST-CONTRACTS>
+  </components>
+  <data-flow>P0 schemas are consumed downstream: P2/P3 skills load the XML templates to author artifacts; P1 spec-guard implements spec_guard_census per census-contract.json and the rules per lint-rules.json; the host computes census output and passes digests to the pure lint engine for comparison.</data-flow>
+  <error-handling>Contract faithfulness errors (schema drift from §14.5/§20) are caught by P0 acceptance review. Well-formedness errors in templates are caught by XML parsing. JSON schema validity is checked by a JSON parser. No runtime error handling in P0 (no enforcement code).</error-handling>
+  <testing>
+    <strategy>Well-formedness of all four XML templates + dogfood program/spec; JSON validity of census-contract.json + lint-rules.json; faithfulness to the design doc §14.5/§20 (host-computed fields, unique-tag identities, DI-aware usage, digest analyzer-state, host/engine split, gate policy).</strategy>
+    <coverage>Each template instantiates its schema; the dogfood program instantiates P-Id nodes, dep-P refs, owns-components, INV-N; the dogfood spec instantiates paths P-NNN plus program membership links. spec_guard_lint and spec_guard_approve run on the dogfood package.</coverage>
+  </testing>
+  <non-goals>
+    <NG-001>Enforcement code (spec_guard_census implementation, lint rules, CDATA parser, generation-gap fix) — P1.</NG-001>
+    <NG-002>Skill SKILL.md wiring (vv-spec impact/paths/decomposition, vv-plan deletes/consumer-coverage) — P2/P3.</NG-002>
+    <NG-003>Execution feedback (reason codes, ADD-NNN addendum, AMEND-GRANT, panel states, undeclared-deletion) — P4.</NG-003>
+    <NG-004>v2 items (weighted threshold, transitive census, submodule census, panel impact chip) — P5.</NG-004>
+    <NG-005>Any modification to existing SKILL.md, plugin runtime code, or the DSH profile — P0 is additive only.</NG-005>
+  </non-goals>
+</spec>

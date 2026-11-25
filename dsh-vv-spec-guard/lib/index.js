@@ -26,10 +26,15 @@
  * already uses node:fs).
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
-import { classifyPlanRisk, lintPlan, lintSpec, parseXmlLite, } from './lint.js';
+import { classifyPlanRisk, lintAddendum, lintInvariantVerification, lintPlan, lintProgram, lintSpec, parseXmlLite, } from './lint.js';
+import { runCensusCached, createScopeProgram } from './census.js';
+import { checkUndeclaredDeletions, computeStaleImpact, } from './execute.js';
+import { amendDeltaDigest, verifyAmendGrant } from './amend.js';
+import { checkGrace, atRiskInvariants, tsPublicSurface, invariantObligations } from './grace.js';
 export const name = 'vv-spec-guard';
 /**
  * Read one artifact through the fs service.
@@ -126,6 +131,12 @@ export function lintFile(name, text, options = {}) {
         return lintSpec(text, resolved);
     if (name === 'plan.xml')
         return lintPlan(text, resolved);
+    if (name === 'program.xml')
+        return lintProgram(text, resolved);
+    if (name === 'impact-addendum.xml')
+        return lintAddendum(text, resolved);
+    if (name === 'invariant-verification.xml')
+        return lintInvariantVerification(text, resolved);
     if (name === 'design-context.xml') {
         return { errors: [], warnings: [{ rule: 'unsupported', message: 'design-context.xml is not linted yet' }] };
     }
@@ -151,6 +162,7 @@ function parseApprovals(text) {
             sha256: record.sha256,
             ...(typeof record.status_at_approval === 'string' ? { status_at_approval: record.status_at_approval } : {}),
             ...(typeof record.approved_at === 'string' ? { approved_at: record.approved_at } : {}),
+            ...(typeof record.baseline_oid === 'string' ? { baseline_oid: record.baseline_oid } : {}),
         });
     }
     return entries;
@@ -271,9 +283,451 @@ function riskOutputLine(risk) {
     const extra = risk.reasons.length > 1 ? `; +${risk.reasons.length - 1} more` : '';
     return `risk: mandatory (${first.category}: ${first.evidence}${extra})`;
 }
+function extractCensusParams(specRoot) {
+    const impact = specRoot.children.find((child) => child.name === 'impact');
+    const censusEl = impact?.children.find((child) => child.name === 'census');
+    if (censusEl === undefined)
+        return undefined;
+    const text = (name) => (censusEl.children.find((child) => child.name === name)?.text ?? '').trim();
+    const ref = text('ref');
+    const scopeDir = text('scope-dir');
+    if (ref === '' || scopeDir === '')
+        return undefined;
+    const splitList = (value) => value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+    const ownerScope = text('owner-scope');
+    return {
+        ref,
+        scopeDir,
+        ...(ownerScope !== '' ? { ownerScope } : {}),
+        deletedSymbols: splitList(text('deleted-symbols')),
+        deletedPaths: splitList(text('deleted-paths')),
+    };
+}
+/** Git top-level of a directory (the census target repo), or undefined. */
+function gitRepoRoot(dir) {
+    try {
+        return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+    }
+    catch {
+        return undefined;
+    }
+}
+/** Census caching + per-repo locking live in census.ts (runCensusCached, follow-up #3). */
+/**
+ * Recompute the census for a spec on the HOST and map it to lint options. The pure
+ * engine never runs the census; it only compares these host-supplied values
+ * (census-stale / untouched-contradicted / census-impact-coverage / cross-scope-fanout).
+ * P1 ships cross-scope-fanout in WARN mode; ERROR only after archive calibration.
+ */
+async function recomputeCensusForSpec(specRoot, repoRoot, opts) {
+    const params = extractCensusParams(specRoot);
+    if (params === undefined)
+        return undefined;
+    const input = {
+        repoRoot,
+        baselineRef: params.ref,
+        scopeDir: params.scopeDir,
+        ...(params.ownerScope === undefined ? {} : { ownerScope: params.ownerScope }),
+        deletedSymbols: params.deletedSymbols,
+        deletedPaths: params.deletedPaths,
+    };
+    const result = await runCensusCached(input);
+    const specCensusSet = { symbols: params.deletedSymbols, paths: params.deletedPaths };
+    const gating = { fanoutMode: opts.fanoutMode, fanoutThreshold: opts.fanoutThreshold, cascadeThreshold: opts.cascadeThreshold };
+    if (!result.ok) {
+        return {
+            refReachable: result.rule !== 'census-ref-unreachable',
+            pathUnresolvable: result.rule === 'census-path-unresolvable' ? [result.message] : [],
+            specCensusSet,
+            ...gating,
+        };
+    }
+    const output = result.output;
+    return {
+        perScope: output.perScope.map((scope) => ({
+            scope: scope.scope,
+            hardCount: scope.hardCount,
+            edges: scope.edges.map((edge) => ({ kind: edge.kind, source: edge.source, target: edge.target })),
+        })),
+        outputDigest: output.outputDigest,
+        refReachable: true,
+        specCensusSet,
+        ...gating,
+    };
+}
+/** `spec_guard_census`: the P1 host census tool (TS compiler API over a worktree). */
+function createCensusTool() {
+    return {
+        name: 'spec_guard_census',
+        description: 'P1 host census: считает consumer-веер удаляемой/переименовываемой поверхности через TS compiler API over a git worktree at baselineRef. DI-aware usage (Nest constructor-param type annotations = runtime-import), edge kinds (runtime/type/schema-barrel/contract-barrel), scope partition + owner/test exclusion, canonical output-digest (pins analyzer version + resolution strategy). Возвращает perScope hard-edge consumers + digest. Хост-инструмент (typescript runtime dep + worktree); pure lint engine только сравнивает его вывод.',
+        parameters: {
+            type: 'object',
+            properties: {
+                repoRoot: { type: 'string', description: 'Absolute git root of the target repository.' },
+                baselineRef: { type: 'string', description: 'Committed OID or resolvable rev (e.g. af92a878^); resolved to an OID first.' },
+                scopeDir: { type: 'string', description: 'Package/repo ROOT (repo-relative), e.g. packages/domains/education-platform.' },
+                ownerScope: { type: 'string', description: 'Scope declaring the deleted symbol; excluded from consumer fan-out.' },
+                deletedSymbols: { type: 'array', items: { type: 'string' }, description: 'Symbols being removed.' },
+                deletedPaths: { type: 'array', items: { type: 'string' }, description: 'Files being removed (host extracts their exports).' },
+                currentRef: { type: 'string', description: 'Optional current OID for stale-impact drift comparison.' },
+            },
+            required: ['repoRoot', 'baselineRef', 'scopeDir', 'deletedSymbols', 'deletedPaths'],
+        },
+        output: textOutput(),
+        async execute(args) {
+            const raw = args;
+            if (typeof raw?.repoRoot !== 'string' || typeof raw?.baselineRef !== 'string' || typeof raw?.scopeDir !== 'string') {
+                return '[census] repoRoot, baselineRef, scopeDir are required';
+            }
+            const input = {
+                repoRoot: raw.repoRoot,
+                baselineRef: raw.baselineRef,
+                scopeDir: raw.scopeDir,
+                ...(typeof raw.ownerScope === 'string' ? { ownerScope: raw.ownerScope } : {}),
+                ...(typeof raw.currentRef === 'string' ? { currentRef: raw.currentRef } : {}),
+                deletedSymbols: Array.isArray(raw.deletedSymbols) ? raw.deletedSymbols.filter((s) => typeof s === 'string') : [],
+                deletedPaths: Array.isArray(raw.deletedPaths) ? raw.deletedPaths.filter((s) => typeof s === 'string') : [],
+            };
+            let result;
+            try {
+                result = await runCensusCached(input);
+            }
+            catch (error) {
+                return `[census] failed: ${error instanceof Error ? error.message : String(error)}`;
+            }
+            if (!result.ok)
+                return `[census] ${result.rule}: ${result.message}`;
+            const output = result.output;
+            const lines = ['spec-guard census'];
+            lines.push(`resolvedOid: ${output.resolvedOid}`);
+            lines.push(`analyzer: ${output.analyzer.name}@${output.analyzer.version} (${output.resolutionStrategy})`);
+            lines.push(`outputDigest: ${output.outputDigest}`);
+            lines.push(`production consumer scopes: ${output.perScope.length}`);
+            for (const scope of output.perScope) {
+                const kinds = scope.edges.map((edge) => edge.kind).join(',');
+                lines.push(`  ${scope.scope}: hardCount=${scope.hardCount} files=${scope.files.length} [${kinds}]`);
+            }
+            if (output.advisory.length > 0)
+                lines.push(`advisory (test/generated) edges: ${output.advisory.length}`);
+            return lines.join('\n');
+        },
+    };
+}
+/** `spec_guard_undeclared_deletion`: P4 commit gate (git diff vs plan deletes/renames). */
+function createUndeclaredDeletionTool() {
+    return {
+        name: 'spec_guard_undeclared_deletion',
+        description: 'P4 commit gate: сравнивает фактический git diff (удаления/переименования) со structured deletion surface плана (<deletes>/<renames>). Удалённый/переименованный path, который план не объявил → undeclared-deletion (execution-time backstop для under-declaration, которую spec/plan lint не видит). Передай repoRoot, baselineRef (pinned OID плана), declaredPaths (plan <deletes>), declaredRenames (plan <renames>). headRef по умолчанию HEAD; WORKTREE включает uncommitted.',
+        parameters: {
+            type: 'object',
+            properties: {
+                repoRoot: { type: 'string' },
+                baselineRef: { type: 'string', description: 'Pinned plan baseline OID/rev to diff from.' },
+                headRef: { type: 'string', description: 'Diff target; default HEAD, or WORKTREE for uncommitted.' },
+                declaredPaths: { type: 'array', items: { type: 'string' }, description: 'Plan <deletes> paths.' },
+                declaredRenames: { type: 'array', items: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } }, description: 'Plan <renames> from/to pairs.' },
+            },
+            required: ['repoRoot', 'baselineRef', 'declaredPaths'],
+        },
+        output: textOutput(),
+        async execute(args) {
+            const raw = args;
+            if (typeof raw?.repoRoot !== 'string' || typeof raw?.baselineRef !== 'string') {
+                return '[undeclared-deletion] repoRoot and baselineRef are required';
+            }
+            const input = {
+                repoRoot: raw.repoRoot,
+                baselineRef: raw.baselineRef,
+                ...(typeof raw.headRef === 'string' ? { headRef: raw.headRef } : {}),
+                declaredPaths: Array.isArray(raw.declaredPaths) ? raw.declaredPaths.filter((p) => typeof p === 'string') : [],
+                ...(Array.isArray(raw.declaredRenames) ? { declaredRenames: raw.declaredRenames.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string') } : {}),
+            };
+            const result = checkUndeclaredDeletions(input);
+            if (!result.ok)
+                return `[undeclared-deletion] ${result.rule}: ${result.message}`;
+            const lines = ['spec-guard undeclared-deletion'];
+            lines.push(`diff deletions/renames: ${result.diffCount}; declared surface: ${result.declaredCount}`);
+            if (result.undeclared.length === 0) {
+                lines.push('OK: every diff deletion/rename is declared in the plan');
+            }
+            else {
+                lines.push(`UNDECLARED: ${result.undeclared.length}`);
+                for (const entry of result.undeclared) {
+                    lines.push(`  [${entry.kind}] ${entry.path}${entry.to === undefined ? '' : ` -> ${entry.to}`}`);
+                }
+            }
+            return lines.join('\n');
+        },
+    };
+}
+/** `spec_guard_stale_impact`: P4 pre-flight drift gate (census baseline vs current). */
+function createStaleImpactTool() {
+    return {
+        name: 'spec_guard_stale_impact',
+        description: 'P4 pre-flight drift gate: перезапускает census на pinned baseline и на currentRef; consumer scopes, появившиеся после baseline → stale-impact drift (repo ушёл между approval и execution). Два полных census прогона. Передай census input (repoRoot, baselineRef, scopeDir, ownerScope, deletedSymbols, deletedPaths) + currentRef.',
+        parameters: {
+            type: 'object',
+            properties: {
+                repoRoot: { type: 'string' },
+                baselineRef: { type: 'string' },
+                currentRef: { type: 'string', description: 'Current ref to compare against the pinned baseline.' },
+                scopeDir: { type: 'string' },
+                ownerScope: { type: 'string' },
+                deletedSymbols: { type: 'array', items: { type: 'string' } },
+                deletedPaths: { type: 'array', items: { type: 'string' } },
+                renamedSymbols: { type: 'array', items: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } } },
+                renamedPaths: { type: 'array', items: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } } },
+            },
+            required: ['repoRoot', 'baselineRef', 'currentRef', 'scopeDir', 'deletedSymbols', 'deletedPaths'],
+        },
+        output: textOutput(),
+        async execute(args) {
+            const raw = args;
+            if (typeof raw?.repoRoot !== 'string' || typeof raw?.baselineRef !== 'string' || typeof raw?.currentRef !== 'string' || typeof raw?.scopeDir !== 'string') {
+                return '[stale-impact] repoRoot, baselineRef, currentRef, scopeDir are required';
+            }
+            const input = {
+                repoRoot: raw.repoRoot,
+                baselineRef: raw.baselineRef,
+                currentRef: raw.currentRef,
+                scopeDir: raw.scopeDir,
+                ...(typeof raw.ownerScope === 'string' ? { ownerScope: raw.ownerScope } : {}),
+                deletedSymbols: Array.isArray(raw.deletedSymbols) ? raw.deletedSymbols.filter((s) => typeof s === 'string') : [],
+                deletedPaths: Array.isArray(raw.deletedPaths) ? raw.deletedPaths.filter((s) => typeof s === 'string') : [],
+                ...(Array.isArray(raw.renamedSymbols) ? { renamedSymbols: raw.renamedSymbols.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string') } : {}),
+                ...(Array.isArray(raw.renamedPaths) ? { renamedPaths: raw.renamedPaths.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string') } : {}),
+            };
+            let result;
+            try {
+                result = await computeStaleImpact(input);
+            }
+            catch (error) {
+                return `[stale-impact] failed: ${error instanceof Error ? error.message : String(error)}`;
+            }
+            if (!result.ok)
+                return `[stale-impact] ${result.rule}: ${result.message}`;
+            const lines = ['spec-guard stale-impact'];
+            lines.push(`drift: ${result.drift}`);
+            lines.push(`new consumer edges since baseline: ${result.newEdgeCount}`);
+            lines.push(`new consumer scopes: ${result.newScopes.length}${result.newScopes.length > 0 ? ` [${result.newScopes.join(', ')}]` : ''}`);
+            lines.push(`removed consumer scopes: ${result.removedScopes.length}${result.removedScopes.length > 0 ? ` [${result.removedScopes.join(', ')}]` : ''}`);
+            lines.push(`removed declared paths (already moved/vanished at current): ${result.removedDeclaredPaths.length}${result.removedDeclaredPaths.length > 0 ? ` [${result.removedDeclaredPaths.join(', ')}]` : ''}`);
+            lines.push(`baselineDigest: ${result.baselineDigest.slice(0, 16)}…  currentDigest: ${result.currentDigest.slice(0, 16)}…`);
+            return lines.join('\n');
+        },
+    };
+}
+/** `spec_guard_amend_verify`: follow-up #2 — AMEND-GRANT delta auto-verification. */
+function createAmendVerifyTool() {
+    return {
+        name: 'spec_guard_amend_verify',
+        description: 'P4 Path A enforcement: machine-checks an AMEND-GRANT. With beforeText+afterText only, computes the canonical delta digest + before/after digests to record in the grant. With delta/planBefore/planAfter also given, verifies the applied plan change matches the granted delta AND before/after digests (a small granted delta cannot sneak a larger change)..delta = sha256 of the canonical line diff of plan bytes.',
+        parameters: {
+            type: 'object',
+            properties: {
+                beforeText: { type: 'string', description: 'Plan bytes before the amendment.' },
+                afterText: { type: 'string', description: 'Plan bytes after the amendment.' },
+                delta: { type: 'string', description: 'Granted delta digest (sha256:<hex> or bare hex).' },
+                planBefore: { type: 'string', description: 'Granted plan-before digest.' },
+                planAfter: { type: 'string', description: 'Granted plan-after digest.' },
+            },
+            required: ['beforeText', 'afterText'],
+        },
+        output: textOutput(),
+        async execute(args) {
+            const raw = args;
+            if (typeof raw?.beforeText !== 'string' || typeof raw?.afterText !== 'string') {
+                return '[amend-verify] beforeText and afterText are required';
+            }
+            const strip = (value) => (typeof value === 'string' ? value.replace(/^sha256:/, '') : '');
+            const hasGrant = typeof raw.delta === 'string' || typeof raw.planBefore === 'string' || typeof raw.planAfter === 'string';
+            if (!hasGrant) {
+                const delta = amendDeltaDigest(raw.beforeText, raw.afterText);
+                const result = verifyAmendGrant(raw.beforeText, raw.afterText, { delta, planBefore: '', planAfter: '' });
+                return ['spec-guard amend-verify (compute)', `delta: sha256:${delta}`, `plan-before: ${result.computed.before}`, `plan-after: ${result.computed.after}`].join('\n');
+            }
+            const result = verifyAmendGrant(raw.beforeText, raw.afterText, {
+                delta: strip(raw.delta),
+                planBefore: strip(raw.planBefore),
+                planAfter: strip(raw.planAfter),
+            });
+            const lines = ['spec-guard amend-verify'];
+            lines.push(result.ok ? 'OK: applied change matches the AMEND-GRANT' : `MISMATCH: ${result.mismatches.join(', ')}`);
+            lines.push(`computed delta: sha256:${result.computed.delta}`);
+            return lines.join('\n');
+        },
+    };
+}
+/** `spec_guard_grace`: follow-up #2 — verify GRACE contracts + surface at-risk invariants. */
+function createGraceTool() {
+    return {
+        name: 'spec_guard_grace',
+        description: 'GRACE→инварианты: превращает GRACE из документации в верифицируемый элемент. Режим check: читает файл, проверяет MODULE_MAP↔exports (spec: "MUST match") и import-ban инварианты ("NEVER imports from X") против реального кода, классифицирует остальные инварианты как behavioral (требуют исполняемой проверки). Режим at-risk: по repoRoot+scopeDir+changedSymbols находит инварианты, упоминающие изменяемые символы — surface их как requiring verification. Поведенческие инварианты не проверяются текстом — они обязаны стать тестами/e2e.',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: { type: 'string', description: 'Source file to check (mode check).' },
+                repoRoot: { type: 'string', description: 'Repo root (mode at-risk).' },
+                scopeDir: { type: 'string', description: 'Package dir to scan (mode at-risk).' },
+                changedSymbols: { type: 'array', items: { type: 'string' }, description: 'Symbols being changed (mode at-risk).' },
+            },
+            required: [],
+        },
+        output: textOutput(),
+        async execute(args) {
+            const raw = args;
+            // mode check: a single file
+            if (typeof raw?.path === 'string') {
+                const absolute = resolveToolPath(raw.path, undefined);
+                if (!existsSync(absolute))
+                    return `[grace] cannot read ${absolute}`;
+                const text = readFileSync(absolute, 'utf8');
+                let actualExports;
+                let factual = false;
+                if (typeof raw.repoRoot === 'string' && typeof raw.scopeDir === 'string') {
+                    try {
+                        const { program, checker } = createScopeProgram(raw.repoRoot, raw.scopeDir);
+                        actualExports = tsPublicSurface(program, checker, absolute);
+                        factual = true;
+                    }
+                    catch {
+                        actualExports = undefined;
+                    }
+                }
+                const result = checkGrace(text, actualExports);
+                return formatGraceCheck(absolute, result, factual);
+            }
+            // mode at-risk: scan a scope for invariants mentioning changed symbols
+            if (typeof raw?.repoRoot === 'string' && typeof raw?.scopeDir === 'string' && Array.isArray(raw.changedSymbols)) {
+                const repoRoot = raw.repoRoot;
+                const symbols = raw.changedSymbols.filter((s) => typeof s === 'string');
+                const root = join(repoRoot, raw.scopeDir);
+                if (!existsSync(root))
+                    return `[grace] scopeDir not found: ${root}`;
+                const files = [];
+                const walk = (dir) => {
+                    for (const entry of readdirSync(dir)) {
+                        if (entry === 'node_modules' || entry.startsWith('.'))
+                            continue;
+                        const full = join(dir, entry);
+                        const st = statSync(full);
+                        if (st.isDirectory())
+                            walk(full);
+                        else if (/\.(ts|tsx)$/.test(entry) && !/\.test\.|\.spec\.|__tests__/.test(full)) {
+                            files.push({ path: full.slice(repoRoot.length + 1), text: readFileSync(full, 'utf8') });
+                        }
+                    }
+                };
+                walk(root);
+                const risky = atRiskInvariants(files, symbols);
+                const lines = [`spec-guard grace at-risk (symbols: ${symbols.join(', ')})`];
+                lines.push(`scanned ${files.length} source files; at-risk invariants: ${risky.length}`);
+                for (const item of risky.slice(0, 40)) {
+                    lines.push(`  [${item.class}] ${item.path}: ${item.invariant}`);
+                }
+                const behavioral = risky.filter(r => r.class === 'behavioral').length;
+                lines.push(`behavioral (require executable verification): ${behavioral}; structural (auto-checkable): ${risky.length - behavioral}`);
+                return lines.join('\n');
+            }
+            return '[grace] provide path (mode check) or repoRoot+scopeDir+changedSymbols (mode at-risk)';
+        },
+    };
+}
+function formatGraceCheck(path, result, factual = false) {
+    const lines = [`spec-guard grace check: ${path}`];
+    if (!result.hasGrace) {
+        lines.push('no GRACE contract found');
+        return lines.join('\n');
+    }
+    if (result.moduleMap) {
+        const { missing, extra } = result.moduleMap;
+        const basis = factual ? 'public surface (TS API)' : 'file-level exports (regex, informational)';
+        if (missing.length === 0 && extra.length === 0)
+            lines.push(`MODULE_MAP ↔ ${basis}: OK`);
+        else
+            lines.push(`MODULE_MAP ↔ ${basis} MISMATCH: missing=[${missing.join(',')}] extra=[${extra.join(',')}]`);
+    }
+    if (result.importBanViolations.length === 0)
+        lines.push('import-ban invariants: OK');
+    else
+        for (const v of result.importBanViolations)
+            lines.push(`IMPORT-BAN VIOLATION: "${v.invariant}" — imports [${v.matchingImports.join(',')}]`);
+    lines.push(`structural invariants: ${result.structuralInvariants.length}; behavioral (require tests/e2e): ${result.behavioralInvariants.length}`);
+    for (const b of result.behavioralInvariants.slice(0, 10))
+        lines.push(`  [behavioral] ${b}`);
+    return lines.join('\n');
+}
+/** `spec_guard_invariant_tests`: invariant→property-test — generate verification obligations. */
+function createInvariantTestsTool() {
+    return {
+        name: 'spec_guard_invariant_tests',
+        description: 'invariant→property-test: замыкает поведенческую верификацию. По repoRoot+scopeDir+changedSymbols находит at-risk GRACE инварианты и генерирует verification obligations: import-ban уже auto-checked; behavioral/reference-ban → property-test scaffold (it.todo, трекается) + invariant-verification.xml ledger (IV-NNN, status pending). Scaffold — obligation + отправная точка, НЕ авто-корректный тест: тело теста пишет агент/человек, затем status→verified с evidence. Plan-close блокируется на pending (unverified-invariant). Возвращает ledger XML + scaffolds для записи в пакет.',
+        parameters: {
+            type: 'object',
+            properties: {
+                repoRoot: { type: 'string' },
+                scopeDir: { type: 'string' },
+                changedSymbols: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['repoRoot', 'scopeDir', 'changedSymbols'],
+        },
+        output: textOutput(),
+        async execute(args) {
+            const raw = args;
+            if (typeof raw?.repoRoot !== 'string' || typeof raw?.scopeDir !== 'string' || !Array.isArray(raw.changedSymbols)) {
+                return '[invariant-tests] repoRoot, scopeDir, changedSymbols are required';
+            }
+            const repoRoot = raw.repoRoot;
+            const symbols = raw.changedSymbols.filter((s) => typeof s === 'string');
+            const root = join(repoRoot, raw.scopeDir);
+            if (!existsSync(root))
+                return `[invariant-tests] scopeDir not found: ${root}`;
+            const files = [];
+            const walk = (dir) => {
+                for (const entry of readdirSync(dir)) {
+                    if (entry === 'node_modules' || entry.startsWith('.'))
+                        continue;
+                    const full = join(dir, entry);
+                    const st = statSync(full);
+                    if (st.isDirectory())
+                        walk(full);
+                    else if (/\.(ts|tsx)$/.test(entry) && !/\.test\.|\.spec\.|__tests__/.test(full)) {
+                        files.push({ path: full.slice(repoRoot.length + 1), text: readFileSync(full, 'utf8') });
+                    }
+                }
+            };
+            walk(root);
+            const risky = atRiskInvariants(files, symbols);
+            const obligations = invariantObligations(risky);
+            const behavioral = obligations.filter(o => o.checkType === 'behavioral-test');
+            const lines = [`spec-guard invariant-tests (symbols: ${symbols.join(', ')})`];
+            lines.push(`at-risk invariants: ${obligations.length}; import-ban auto-checked: ${obligations.length - behavioral.length}; behavioral obligations: ${behavioral.length}`);
+            // Ledger XML for the package.
+            lines.push('', '--- invariant-verification.xml ---');
+            lines.push('<invariant-verification>');
+            for (const o of behavioral) {
+                lines.push(`  <${o.id}>`);
+                lines.push(`    <invariant>${escapeXml(o.invariant)}</invariant>`);
+                lines.push(`    <module>${escapeXml(o.module)}</module>`);
+                lines.push(`    <test-path></test-path>`);
+                lines.push(`    <status>pending</status>`);
+                lines.push(`    <evidence></evidence>`);
+                lines.push(`  </${o.id}>`);
+            }
+            lines.push('</invariant-verification>');
+            for (const o of behavioral.slice(0, 10)) {
+                lines.push('', `--- scaffold ${o.id} (${o.module}) ---`, o.scaffold ?? '');
+            }
+            return lines.join('\n');
+        },
+    };
+}
+function escapeXml(value) {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 // ── Tool registration ───────────────────────────────────────────────────────
 /** `spec_guard_lint`: the deterministic probe over one package or XML file. */
-function createLintTool(ctx, verdictMaxChars) {
+function createLintTool(ctx, verdictMaxChars, gating) {
     return {
         name: 'spec_guard_lint',
         description: 'Детерминированная проверка .vvoc spec/plan XML-артефактов: линт одного файла (spec.xml/plan.xml) или пакета .vvoc/specs/YYYY-MM-DD-<slug>/. Для plan.xml подхватывает sibling spec.xml. Путь может быть абсолютным или относительным — относительный разрешается от текущего рабочего каталога сессии (например .vvoc/specs/2026-11-07-<slug>/). Проверяет статус/идентичности/ссылки/циклы/полноту, §K stale-approval по approvals.json, §L receipt-missing/receipt-failed по receipts.jsonl и печатает risk: standard|mandatory (§N) для plan.xml.',
@@ -347,6 +801,20 @@ function createLintTool(ctx, verdictMaxChars) {
                     lines.push(`[spec-guard] cannot read ${spec.path}`);
                 }
             }
+            // P1: the HOST recomputes the census for the spec (host/engine split). The
+            // pure engine only compares these values; it never runs the census itself.
+            let censusData;
+            if (specText !== undefined) {
+                try {
+                    const specRoot = parseXmlLite(specText);
+                    const repoRoot = gitRepoRoot(resolveToolPath(packagePath, cwd));
+                    if (repoRoot !== undefined)
+                        censusData = await recomputeCensusForSpec(specRoot, repoRoot, gating);
+                }
+                catch {
+                    // spec unparsable: lintSpec reports it; census-dependent rules degrade.
+                }
+            }
             for (const file of files) {
                 let text;
                 try {
@@ -363,6 +831,7 @@ function createLintTool(ctx, verdictMaxChars) {
                     currentSha256: sha256Hex(text),
                     approvalSidecarPresent,
                     receipts,
+                    ...(censusData === undefined ? {} : { census: censusData }),
                 };
                 const verdict = lintFile(file.name, text, lintOptions);
                 if (file.name === 'plan.xml' && receiptWarnings.length > 0)
@@ -376,6 +845,34 @@ function createLintTool(ctx, verdictMaxChars) {
                 // follow while the budget lasts.
                 for (const finding of [...verdict.errors, ...verdict.warnings].slice(0, 8)) {
                     lines.push(`  [${finding.rule}] ${finding.message}`);
+                }
+            }
+            // P4 read-side: an unresolved addendum blocks the package (validate-plan gate).
+            if (!isFile) {
+                try {
+                    const addendumPath = packageSidecarPath(packagePath, 'impact-addendum.xml');
+                    const addendumVerdict = lintAddendum(await readArtifact(fs, addendumPath, cwd, exec?.signal));
+                    if (addendumVerdict.errors.length > 0 || addendumVerdict.warnings.length > 0) {
+                        lines.push(`${addendumPath}: ${verdictLine(addendumVerdict, verdictMaxChars)}`);
+                        for (const finding of addendumVerdict.errors.slice(0, 8))
+                            lines.push(`  [${finding.rule}] ${finding.message}`);
+                    }
+                }
+                catch {
+                    // No impact-addendum.xml: nothing pending.
+                }
+                // invariant→property-test read-side: pending invariant obligations block plan-close.
+                try {
+                    const invPath = packageSidecarPath(packagePath, 'invariant-verification.xml');
+                    const invVerdict = lintInvariantVerification(await readArtifact(fs, invPath, cwd, exec?.signal));
+                    if (invVerdict.errors.length > 0 || invVerdict.warnings.length > 0) {
+                        lines.push(`${invPath}: ${verdictLine(invVerdict, verdictMaxChars)}`);
+                        for (const finding of invVerdict.errors.slice(0, 8))
+                            lines.push(`  [${finding.rule}] ${finding.message}`);
+                    }
+                }
+                catch {
+                    // No invariant-verification.xml: no tracked obligations.
                 }
             }
             return lines.join('\n');
@@ -472,15 +969,30 @@ function createApproveTool(ctx) {
                         continue;
                     }
                     const sha256 = sha256Hex(buffer);
+                    // Pin the approval-time commit OID so the P4 commit gate has a defined diff
+                    // window (feedback: baselineRef was not pinned by any artifact).
+                    let baselineOid;
+                    const approvalRepoRoot = gitRepoRoot(packageDir);
+                    if (approvalRepoRoot !== undefined) {
+                        try {
+                            baselineOid = execFileSync('git', ['-C', approvalRepoRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+                        }
+                        catch {
+                            baselineOid = undefined;
+                        }
+                    }
                     approvals = upsertApproval(approvals, {
                         artifact: artifact.name,
                         sha256,
                         status_at_approval: 'approved',
                         approved_at: new Date().toISOString(),
+                        ...(baselineOid === undefined ? {} : { baseline_oid: baselineOid }),
                     });
                     approvedCount += 1;
                     lines.push(`${artifact.name}: digest recorded`);
                     lines.push(`  sha256: ${sha256}`);
+                    if (baselineOid !== undefined)
+                        lines.push(`  baseline_oid: ${baselineOid}`);
                     lines.push(`  sidecar: ${sidecarPath}`);
                 }
                 if (approvedCount === 0) {
@@ -593,11 +1105,27 @@ function applyBody(ctx, config, marker, writeMarker) {
     // registry exists.
     const definitions = [];
     if (config.probeTool !== false)
-        definitions.push(createLintTool(ctx, verdictMaxChars));
+        definitions.push(createLintTool(ctx, verdictMaxChars, {
+            fanoutMode: config.crossScopeFanoutMode ?? 'error',
+            fanoutThreshold: config.crossScopeFanoutThreshold ?? 3,
+            cascadeThreshold: config.cascadeConcentrationThreshold ?? 5,
+        }));
     if (config.approveTool !== false)
         definitions.push(createApproveTool(ctx));
     if (config.evidenceTool !== false)
         definitions.push(createEvidenceTool(ctx));
+    if (config.censusTool !== false)
+        definitions.push(createCensusTool());
+    if (config.undeclaredDeletionTool !== false)
+        definitions.push(createUndeclaredDeletionTool());
+    if (config.staleImpactTool !== false)
+        definitions.push(createStaleImpactTool());
+    if (config.amendVerifyTool !== false)
+        definitions.push(createAmendVerifyTool());
+    if (config.graceTool !== false)
+        definitions.push(createGraceTool());
+    if (config.invariantTestsTool !== false)
+        definitions.push(createInvariantTestsTool());
     if (definitions.length === 0)
         return;
     const registerDefinitions = (tools) => {

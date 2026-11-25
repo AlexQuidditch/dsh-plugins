@@ -35,8 +35,13 @@
       <T-001>
         <title></title>
         <file></file>
+        <scope></scope>
         <status>pending</status>
         <description></description>
+        <!-- Destructive tasks MUST also declare the structured deletion surface:
+             <deletes><D-001><path>…</path></D-001></deletes> and/or
+             <renames><R-001><from>…</from><to>…</to></R-001></renames>
+             (deletes-template.xml / renames-template.xml). plan deletes ⊆ spec census set. -->
         <depends_on>
         </depends_on>
         <snippet><![CDATA[
@@ -68,4 +73,16 @@ export type ExampleType = {
       </T-001>
     </wave-1>
   </tasks>
+
+  <!-- Cross-scope coverage (P3): required when the spec has <impact>. Map each spec
+       impact consumer scope to the task(s) covering it, or an explicit deferral node
+       ref (dep-P-*). A wave that changes a shared contract carries <scope-barrier>
+       naming the consumer scopes it closes in-wave (or defers with tracking). -->
+  <consumer-coverage>
+    <CC-001>
+      <scope></scope>
+      <covered-by><dep-T-001/></covered-by>
+      <!-- when deferred instead of covered: <deferral-target><dep-P-EXAMPLE/></deferral-target> -->
+    </CC-001>
+  </consumer-coverage>
 </plan>

@@ -1,0 +1,48 @@
+<!-- impact-addendum-template.xml — P4 schema (vv-cross-scope-impact-rd §12.2).
+     Lives in the spec package: .vvoc/specs/<id>/impact-addendum.xml. Append-only;
+     one ADD-NNN entry per mid-execution discovery (SCOPE_CASCADE_DISCOVERED).
+     Unique-tag, no attributes: ADD-NNN identity in the tag name; generic wrapper
+     (impact-addendum) stays generic.
+
+     Lifecycle (§12.2): discovered → recorded → triaged → resolving → resolved |
+     resolved-deferred | resolved-spawned | parked. The executor appends ADD-NNN on
+     intake, triages authority (safe_auto | gated_auto | manual | emergent), and
+     records the resolution. Amending the plan re-runs spec_guard_approve (digest-bound);
+     an AMEND-GRANT in reviews/grants.md binds the exact plan-delta digest.
+
+     Discovery budget: > K addenda per wave → ADDENDUM_BUDGET_EXHAUSTED → escalate to
+     re-spec/program, not infinite amendment. -->
+<impact-addendum>
+  <ADD-001>
+    <!-- the discovered forced consumer edge -->
+    <edge>
+      <source></source>
+      <target></target>
+    </edge>
+    <affected-scope></affected-scope>
+    <!-- byte-exact anchor pinned at intake: excerpt + anchor-digest from spec_guard_evidence MATCH -->
+    <evidence>
+      <path></path>
+      <start-line></start-line>
+      <end-line></end-line>
+      <excerpt></excerpt>
+      <anchor-digest></anchor-digest>
+    </evidence>
+    <why-forced></why-forced>
+    <proposed-disposition></proposed-disposition>
+    <!-- safe_auto | gated_auto | manual | emergent -->
+    <authority></authority>
+    <!-- recorded | triaged | resolving | escalated | resolved | resolved-deferred | resolved-spawned | parked -->
+    <status>recorded</status>
+    <discovered-at></discovered-at>
+    <task-id></task-id>
+    <wave></wave>
+    <head-oid></head-oid>
+    <!-- resolution: grant ref / plan digest / new task ids / deferral target / spawned package -->
+    <resolution>
+      <kind></kind>
+      <ref></ref>
+      <receipts></receipts>
+    </resolution>
+  </ADD-001>
+</impact-addendum>

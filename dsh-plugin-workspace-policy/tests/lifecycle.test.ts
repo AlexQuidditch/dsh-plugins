@@ -58,7 +58,12 @@ afterAll(async () => {
 })
 
 /** The slice of one Agent the policy seams read (0.2.2 model-selection seam). */
-function fakeAgent(id = 'session-1', header: Record<string, unknown> = {}, loggedHeader = false) {
+function fakeAgent(
+  id = 'session-1',
+  header: Record<string, unknown> = {},
+  loggedHeader = false,
+  options: Record<string, unknown> = {},
+) {
   const selections: RouteSelection[] = []
   return {
     id,
@@ -66,6 +71,7 @@ function fakeAgent(id = 'session-1', header: Record<string, unknown> = {}, logge
       header: { id, cwd: workspace, isSeeded: false, ...header },
       requestHeader: () => (loggedHeader ? { config: { provider: 'zai', model: 'glm-5.3' } } : undefined),
     },
+    options,
     model: {
       current: () => selections.at(-1),
       select: (selection: RouteSelection) => {
@@ -180,6 +186,36 @@ describe('agent lifecycle → model.select at creation', () => {
     dispatcher(ctx).emit({}, 'agent/created', { agent, source: 'resume' })
     await vi.waitFor(() => expect(agent.selections).toHaveLength(1))
     expect(agent.selections[0]).toEqual({ provider: 'cursor', model: 'default' })
+    await ctx.fiber.dispose()
+  })
+
+  it('leaves a child whose route was explicitly requested on that route', async () => {
+    const parent = fakeAgent('session-20', {}, false, { provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' })
+    const child = fakeAgent(
+      'child-20',
+      { delegationDepth: 1, parentSession: 'session-20' },
+      false,
+      { provider: 'cursor', model: 'grok-4.7', reasoningEffort: 'high' },
+    )
+    const ctx = await mountWithProjections(new Map([[parent.id, parent], [child.id, child]]))
+    dispatcher(ctx).emit({}, 'agent/created', { agent: child, source: 'startup' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(child.selections).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it('routes a child that inherited the parent route to the workers route', async () => {
+    const parent = fakeAgent('session-21', {}, false, { provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' })
+    const child = fakeAgent(
+      'child-21',
+      { delegationDepth: 1, parentSession: 'session-21' },
+      false,
+      { provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' },
+    )
+    const ctx = await mountWithProjections(new Map([[parent.id, parent], [child.id, child]]))
+    dispatcher(ctx).emit({}, 'agent/created', { agent: child, source: 'startup' })
+    await vi.waitFor(() => expect(child.selections).toHaveLength(1))
+    expect(child.selections[0]).toEqual({ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' })
     await ctx.fiber.dispose()
   })
 })

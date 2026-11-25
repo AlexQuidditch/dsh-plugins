@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P4 package spec — dogfoods the P0 schema (paths + program membership).
+     Part of program .vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml (P-P4).
+     Design source: hive-research/vv-cross-scope-impact-rd.md §4.7/§4.8/§11.2/§12/§14.5.
+     P4 closes the execution loop: stale-impact pre-flight, undeclared-deletion commit
+     gate, SCOPE_CASCADE_DISCOVERED + addendum + AMEND-GRANT protocol, goal-attainment
+     closeout. No shared-surface deletion, so impact-present is not triggered for P4. -->
+<spec>
+  <status>approved</status>
+  <goal>Close the cross-scope execution loop: host checks spec_guard_undeclared_deletion (git diff vs plan deletes/renames) and spec_guard_stale_impact (census baseline vs current drift); the ADD-NNN impact-addendum schema + SCOPE_CASCADE_DISCOVERED / ADDENDUM_BUDGET_EXHAUSTED reason codes + AMEND-GRANT; wire vv-execute (pre-flight, commit gate, discovery triage paths A/B/C, discovery budget) and vv-review (consumer entry files in dispatch, goal-attainment closeout).</goal>
+  <architecture>CLASSIFY_BOUNDARY: domain-only. Changes confined to dsh-vv-spec-guard (src/execute.ts new host checks, src/index.ts tool registration) and agent-presets/skills (vv-execute, vv-review, addendum template). Host checks do git + census I/O; the pure lint engine stays zero-dependency. stale-impact reuses runCensus (baseline+current pair); undeclared-deletion parses git diff --name-status -M.</architecture>
+  <program>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</program>
+  <package-id>P-P4</package-id>
+  <paths>
+    <P-001><path>dsh-vv-spec-guard/src/execute.ts</path><role>create</role></P-001>
+    <P-002><path>dsh-vv-spec-guard/src/index.ts</path><role>modify</role></P-002>
+    <P-003><path>agent-presets/skills/vv-execute/SKILL.md</path><role>modify</role></P-003>
+    <P-004><path>agent-presets/skills/vv-review/SKILL.md</path><role>modify</role></P-004>
+    <P-005><path>agent-presets/skills/vv-execute/references/impact-addendum-template.xml</path><role>create</role></P-005>
+    <P-006><path>dsh-vv-spec-guard/lint.p4.test.mjs</path><role>create</role></P-006>
+  </paths>
+  <components>
+    <C-EXECUTE-FEEDBACK>
+      <name>Execution feedback</name>
+      <responsibility>undeclared-deletion commit gate + stale-impact pre-flight (host); ADD-NNN addendum + reason codes + AMEND-GRANT; vv-execute discovery protocol + vv-review consumer-entry-file dispatch + goal-attainment closeout</responsibility>
+      <depends-on></depends-on>
+    </C-EXECUTE-FEEDBACK>
+  </components>
+  <testing>
+    <strategy>Host-check unit tests against real foundation git history: undeclared-deletion on the teardown diff (341 deletions; declaring a path removes it; unreachable baseline typed error); stale-impact same-ref determinism (no drift, identical digests). Skill frontmatter intact; addendum template parses.</strategy>
+    <coverage>undeclared-deletion declared/undeclared/unreachable; stale-impact drift/determinism; discovery protocol paths A/B/C; goal-attainment ledger.</coverage>
+  </testing>
+  <non-goals>
+    <NG-001>Panel addendum-pending state / impact chip — P5.</NG-001>
+    <NG-002>cross-scope-fanout / cascade-concentration ERROR flip — after archive calibration.</NG-002>
+    <NG-003>v2 census items (weighted threshold, transitive, submodule) — P5.</NG-003>
+  </non-goals>
+</spec>

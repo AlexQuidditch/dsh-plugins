@@ -26,6 +26,18 @@ This skill is the normative home of the vv review contract every vv reviewer (sp
 <step>Mark the review todo complete with `todo_write` after the review is complete.</step>
 </workflow>
 
+<cross_scope_review>
+<rule>When the spec/plan carries an &lt;impact&gt;, the dispatcher MUST name the consumer-scope entry files (from the impact S-&lt;SCOPE&gt; edges) in each reviewer dispatch. Bounded-work reviewers read only named paths, so omitting consumer entry files makes them structurally blind to the fan-out — the CURRICULUM failure mode. Add a scope_impact_coverage row to the coverage ledger.</rule>
+<rule>Adversarial brief for a cross-scope plan: beyond the standard lens, ask "which consumer scopes does this plan assert untouched, and what coupling evidence contradicts that?" and "which consumer edge will the executor discover that the plan did not enumerate?"</rule>
+</cross_scope_review>
+
+<goal_attainment>
+<principle>For a cross-scope plan closeout, review goal attainment across ALL impact consumers, not just task completion. A plan is not done when its tasks are done; it is done when the spec goal is demonstrably satisfied across every consumer scope.</principle>
+<rule>At plan close, dispatch a goal-attainment check: for each impact consumer scope verify the behavioral outcome — surface/policy change-kind needs browser/e2e evidence; contract/data needs typecheck + migration receipt. Name the consumer entry files in the dispatch.</rule>
+<rule>Persist the per-consumer attainment ledger to .vvoc/specs/&lt;id&gt;/reviews/goal-attainment.xml (one row per impact consumer: scope, status attained|deferred|unattained, evidence anchor or deferral-target). An unattained, non-deferred consumer scope blocks plan close (vv-execute prepare-archive requires this ledger when the spec has &lt;impact&gt;). Missing behavioral evidence for a surface/policy consumer is Important/Unproven, not a pass.</rule>
+<rule>Behavioral GRACE invariants surfaced as at-risk become verification obligations (spec_guard_invariant_tests → invariant-verification.xml, IV-NNN). Each needs an executable property test (status verified + evidence) or an explicit waiver; a pending obligation is an unverified-invariant error that blocks plan close. A scaffold (it.todo) is an obligation, not a discharged test — the test body must actually be written.</rule>
+</goal_attainment>
+
 <finding_format>
 <rule>Present findings with both axes — severity and decision authority — plus a byte-exact evidence anchor:</rule>
 <format>[Severity/authority] path:start-end (symbol/scope) — what is wrong, why it matters, expected fix direction

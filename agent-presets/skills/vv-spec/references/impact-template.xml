@@ -1,0 +1,75 @@
+<!-- impact-template.xml — P0 schema contract (vv-cross-scope-impact-rd §4.1/§14.5).
+     The <impact> section is a top-level child of <spec>, sibling to <components>.
+     Unique-tag, no attributes: repeating entities use S-<SCOPE>, E-NNN, IP-NNN.
+     Generic once-per-parent wrappers (impact, census, fanout, edges,
+     implicit-premises) stay generic. Identity lives in the tag name.
+
+     HOST-COMPUTED fields (census output-digest, fanout counts, per-scope edges and
+     file counts) are populated from spec_guard_census output, NEVER author prose.
+     lint (census-stale) re-checks them against a host re-computation at <ref>.
+
+     Trigger: required when spec <paths> touch a shared surface (db/schemas/,
+     contracts/, migrations) — rule impact-present. Disposition enum is closed:
+     cover-in-plan | defer-to-program | verified-untouched (NO exclusion bypass v1).
+     census-impact-coverage: every host-census consumer scope with >=1 hard edge
+     MUST appear here as S-<SCOPE> with cover-in-plan or defer-to-program. -->
+<impact>
+  <census>
+    <tool>spec_guard_census</tool>
+    <!-- baselineRef: a committed OID (resolve relative revs first). Immutable pin. -->
+    <ref></ref>
+    <!-- package/repo ROOT, not src/backend, so barrel consumers are visible. -->
+    <scope-dir></scope-dir>
+    <!-- scope declaring the deleted symbol; excluded from consumer fan-out. -->
+    <owner-scope></owner-scope>
+    <!-- derived from plan <deletes>/<renames>; census-incomplete checks plan ⊆ this set. -->
+    <deleted-symbols></deleted-symbols>
+    <deleted-paths></deleted-paths>
+    <!-- sha256 of canonical host census output (§14.3): includes analyzer version,
+         resolutionStrategy, resolvedOid, sorted inputs, normalized edges. -->
+    <output-digest></output-digest>
+  </census>
+  <fanout>
+    <!-- numeric, host-computed; lint thresholds read these numbers. -->
+    <consumer-scopes>0</consumer-scopes>
+    <consumer-files>0</consumer-files>
+    <hard-edges>0</hard-edges>
+  </fanout>
+  <!-- One S-<SCOPE> per affected scope. role: owner | consumer | bystander.
+       change-kind: contract | data | surface | policy | none.
+       Behavioral closeout (browser/e2e) required only for surface | policy. -->
+  <S-EXAMPLE>
+    <role>consumer</role>
+    <change-kind>surface</change-kind>
+    <edges>
+      <!-- kind: runtime-import | type-import | schema-barrel | contract-barrel.
+           source = repo-relative file (NO line); target = symbol name.
+           line number goes in non-digested <display-line>. -->
+      <E-001>
+        <kind>runtime-import</kind>
+        <source></source>
+        <target></target>
+        <display-line></display-line>
+      </E-001>
+    </edges>
+    <disposition>cover-in-plan</disposition>
+    <!-- When defer-to-program: explicit node ref(s), never a range string. -->
+    <deferral-target><dep-P-EXAMPLE/></deferral-target>
+    <!-- When verified-untouched: host hard-edges MUST be 0 AND a behavioral
+         justification is required (zero hard edges is a signal, not proof). -->
+    <untouched-verification>
+      <hard-edges>0</hard-edges>
+      <census-ref></census-ref>
+      <behavioral-justification></behavioral-justification>
+    </untouched-verification>
+  </S-EXAMPLE>
+  <implicit-premises>
+    <!-- behavioral rules riding detected couplings (interview-surfaced). -->
+    <IP-001></IP-001>
+  </implicit-premises>
+  <!-- single-package | program. WARN mode allows recorded single-package choice;
+       ERROR mode (post-calibration) forces program (no override grant). -->
+  <decomposition>single-package</decomposition>
+  <!-- when program: path to .vvoc/programs/<id>/program.xml -->
+  <program></program>
+</impact>

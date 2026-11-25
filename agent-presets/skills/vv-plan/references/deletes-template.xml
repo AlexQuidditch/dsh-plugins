@@ -1,0 +1,29 @@
+<!-- deletes-template.xml — P0 schema contract (vv-cross-scope-impact-rd §4.5 F1/F3).
+     Plan FRAGMENT: the structured deletion surface of a destructive task. Inserted
+     inside the task (T-NNN) that performs the deletion, sibling to <snippet>. The
+     rename counterpart is renames-template.xml. A destructive task WITHOUT
+     <deletes>/<renames> is a plan failure (like an empty <acceptance>). This is the
+     deterministic input for census-incomplete and the spec_guard_census request —
+     NOT prose in <description> (0/103 legacy plans had it).
+
+     Unique-tag, no attributes: deletes D-NNN. Generic wrapper (deletes) stays generic.
+     Unique identities make entries addressable (generic repeating <path>/<symbol>
+     children were pairing-lossy — round-4 F3).
+
+     The HOST extracts each deleted path's exported symbols via the TS compiler API
+     at baselineRef, so <path> need not hand-list symbols (resolves e.g. a schema file
+     vs its module-name mismatch). An optional <symbol> names a specific export when
+     the author wants to scope the deletion narrower than the whole file.
+
+     Precedence (non-circular): the SPEC pins the census set; census-incomplete runs
+     at PLAN lint and checks plan <deletes>/<renames> ⊆ the spec-pinned set (two
+     distinct artifacts). undeclared-deletion (execution, P4) catches a git-diff
+     deletion absent from this set. A <from> path that fails resolution at baselineRef
+     → census-path-unresolvable error (not silent zero edges). -->
+<deletes>
+  <D-001>
+    <path></path>
+    <!-- optional: a specific export of <path>; omit to census all host-extracted exports. -->
+    <symbol></symbol>
+  </D-001>
+</deletes>

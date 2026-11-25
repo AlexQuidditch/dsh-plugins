@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Implementation program for the vv cross-scope impact pipeline extension.
+     Dogfoods program-template.xml (P0 schema). Source design:
+     hive-research/vv-cross-scope-impact-rd.md §9 (P0-P5), §14.5, §19, §20.
+     This program is the initiative umbrella; each package gets its own spec+plan.
+     P0 (the schema seam) is the first package and is delivered by this artifact set. -->
+<program>
+  <status>draft</status>
+  <goal>Extend the vv spec-plan-execute pipeline with an orthogonal cross-scope impact axis, a host-executed deletion census, deterministic lint teeth, and a program tier, so a large intra-domain refactoring does not cascade into an operator-driven waterfall. Validate against the foundation CURRICULUM counterfactual (schools deletion surface, examinations DI witness).</goal>
+  <origin-spec>.vvoc/specs/2026-11-25-p0-schema-contracts/spec.xml</origin-spec>
+  <components>
+    <C-ARTIFACT-SCHEMAS>
+      <name>Artifact XML templates</name>
+      <responsibility>impact / paths / program / plan-deletes templates (unique-tag, no attributes)</responsibility>
+    </C-ARTIFACT-SCHEMAS>
+    <C-HOST-CONTRACTS>
+      <name>Host tool contracts</name>
+      <responsibility>census-contract.json + lint-rules.json + P0 seam README</responsibility>
+    </C-HOST-CONTRACTS>
+    <C-CENSUS-ENGINE>
+      <name>spec_guard_census implementation</name>
+      <responsibility>TS compiler API over worktree; DI-aware usage; edge kinds; canonical digest; partition; lifecycle</responsibility>
+    </C-CENSUS-ENGINE>
+    <C-LINT-ENFORCEMENT>
+      <name>Lint enforcement</name>
+      <responsibility>generation-gap fix + CDATA parser + new cross-scope rules + archive calibration</responsibility>
+    </C-LINT-ENFORCEMENT>
+    <C-SPEC-SKILL>
+      <name>vv-spec skill wiring</name>
+      <responsibility>impact section + paths + SCOPE_IMPACT interview step + decomposition gate</responsibility>
+    </C-SPEC-SKILL>
+    <C-PLAN-SKILL>
+      <name>vv-plan skill wiring</name>
+      <responsibility>deletes/renames + consumer-coverage + scope-barrier waves + behavioral ACs (surface/policy)</responsibility>
+    </C-PLAN-SKILL>
+    <C-EXECUTE-FEEDBACK>
+      <name>Execution feedback</name>
+      <responsibility>reason codes + ADD-NNN addendum + AMEND-GRANT + pre-flight re-census + undeclared-deletion + goal-attainment closeout</responsibility>
+    </C-EXECUTE-FEEDBACK>
+    <C-PANEL>
+      <name>Panel + v2 items</name>
+      <responsibility>impact chip + program rollup + weighted threshold / transitive / submodule census</responsibility>
+    </C-PANEL>
+  </components>
+  <packages>
+    <P-P0>
+      <title>P0 — schema-contract seam</title>
+      <spec>.vvoc/specs/2026-11-25-p0-schema-contracts/spec.xml</spec>
+      <owns-components>C-ARTIFACT-SCHEMAS, C-HOST-CONTRACTS</owns-components>
+      <depends_on></depends_on>
+      <seam-contract>Artifact XML templates + census-contract.json + lint-rules.json. Additive only; no SKILL.md/plugin code/profile change. P1-P4 consume these schemas.</seam-contract>
+      <status>applied</status>
+    </P-P0>
+    <P-P1>
+      <title>P1 — spec-guard enforcement</title>
+      <spec></spec>
+      <owns-components>C-CENSUS-ENGINE, C-LINT-ENFORCEMENT</owns-components>
+      <depends_on><dep-P-P0/></depends_on>
+      <seam-contract>spec_guard_census tool (per census-contract.json) + lint rules (per lint-rules.json) + CDATA-aware parseXmlLite + generation-gap fix. cross-scope-fanout ships WARN; archive calibration before ERROR. First validation: examinations DI runtime-import witness at af92a878^.</seam-contract>
+      <status>pending</status>
+    </P-P1>
+    <P-P2>
+      <title>P2 — vv-spec skill wiring</title>
+      <spec>.vvoc/specs/2026-11-25-p2-vv-spec-wiring/spec.xml</spec>
+      <owns-components>C-SPEC-SKILL</owns-components>
+      <depends_on><dep-P-P0/><dep-P-P1/></depends_on>
+      <seam-contract>vv-spec loads impact/paths/program templates; SCOPE_IMPACT interview step; decomposition gate (WARN recorded choice / ERROR program). work-item reference check is an interview step here.</seam-contract>
+      <status>applied</status>
+    </P-P2>
+    <P-P3>
+      <title>P3 — vv-plan skill wiring</title>
+      <spec>.vvoc/specs/2026-11-25-p3-vv-plan-wiring/spec.xml</spec>
+      <owns-components>C-PLAN-SKILL</owns-components>
+      <depends_on><dep-P-P0/><dep-P-P2/></depends_on>
+      <seam-contract>vv-plan loads deletes template; task scope + consumer-coverage + scope-barrier waves; behavioral ACs for surface/policy; cascade-concentration + consumer-coverage rules.</seam-contract>
+      <status>applied</status>
+    </P-P3>
+    <P-P4>
+      <title>P4 — execution feedback + review</title>
+      <spec>.vvoc/specs/2026-11-25-p4-execution-feedback/spec.xml</spec>
+      <owns-components>C-EXECUTE-FEEDBACK</owns-components>
+      <depends_on><dep-P-P0/><dep-P-P3/></depends_on>
+      <seam-contract>SCOPE_CASCADE_DISCOVERED reason code + impact-addendum (ADD-NNN) + AMEND-GRANT + pre-flight stale-impact + undeclared-deletion + goal-attainment closeout + review dispatch naming consumer entry files.</seam-contract>
+      <status>applied</status>
+    </P-P4>
+    <P-P5>
+      <title>P5 — panel + v2 items (optional)</title>
+      <spec>.vvoc/specs/2026-11-25-p5-panel-cross-scope/spec.xml</spec>
+      <owns-components>C-PANEL</owns-components>
+      <depends_on><dep-P-P1/><dep-P-P4/></depends_on>
+      <seam-contract>impact fan-out chip + addendum-pending state (delivered); full program rollup + weighted threshold / transitive census / submodule census (v2) deferred. Deferrable polish.</seam-contract>
+      <status>applied</status>
+    </P-P5>
+  </packages>
+  <invariants>
+    <INV-1>Host computes, author declares, lint compares. Census counts/edges/digest are host output, never author prose.</INV-1>
+    <INV-2>lint.ts verdict engine stays zero-dependency and never touches the filesystem; the census is a separate host tool (typescript runtime dep + worktree). Host passes censusDigest into SpecLintOptions.</INV-2>
+    <INV-3>Unique-tag, no attributes; identity in the tag name; generic repeating children forbidden (pairing-lossy).</INV-3>
+    <INV-4>P0 is additive only: no existing SKILL.md, plugin code, or profile is modified by the schema seam.</INV-4>
+    <INV-5>cross-scope-fanout ships WARN and flips to ERROR only after archive calibration confirms it fires on the schools deletion surface, not on local-feature noise. ERROR forces program (no override grant).</INV-5>
+    <INV-6>Worktree ref-pinning: mirror pnpm per-entry relative links; forbid wholesale live-node_modules symlink; resolve baselineRef to OID first; digest pins analyzer version + resolutionStrategy.</INV-6>
+  </invariants>
+  <sequencing>P0 seam first (schemas + rule names + census contract). P1 implements enforcement against P0 schemas. P2 wires vv-spec, P3 wires vv-plan (after P2), P4 wires execution feedback (after P3). P5 panel + v2 items are the optional tail after P1/P4. Contract-first: P0 freezes the substrate so P1-P4 are parallelizable and integration is deterministic.</sequencing>
+</program>

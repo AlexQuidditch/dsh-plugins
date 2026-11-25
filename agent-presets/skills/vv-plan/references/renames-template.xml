@@ -1,0 +1,17 @@
+<!-- renames-template.xml — P0 schema contract (vv-cross-scope-impact-rd §4.5 F1/F3).
+     Plan FRAGMENT: the structured rename surface of a destructive task. Inserted
+     inside the task (T-NNN), sibling to <snippet> and <deletes> (deletes-template.xml).
+
+     Unique-tag, no attributes: renames R-NNN with <from>/<to> children. Generic
+     wrapper (renames) stays generic. The census queries the FROM (old) name/path
+     consumers at baselineRef; the TO target need not exist at baseline.
+
+     Feeds census renamedSymbols/renamedPaths inputs (digest-covered). A <from> path
+     that fails module resolution at baselineRef → census-path-unresolvable error.
+     census-incomplete checks plan <renames> ⊆ the spec-pinned census set at PLAN lint. -->
+<renames>
+  <R-001>
+    <from></from>
+    <to></to>
+  </R-001>
+</renames>

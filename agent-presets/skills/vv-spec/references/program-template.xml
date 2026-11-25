@@ -1,0 +1,49 @@
+<!-- program-template.xml — P0 schema contract (vv-cross-scope-impact-rd §4.4/§14.5).
+     A program is the formalized charter: a decision + boundary contract spanning
+     multiple delivery packages, each of which gets its own spec.xml + plan.xml.
+     Canonical home: .vvoc/programs/<id>/program.xml (programs span packages; a
+     sibling-of-specs home would tie a multi-package program to one package).
+
+     Unique-tag, no attributes: packages P-<Id>, components C-<Id>, invariants INV-N,
+     dependency refs dep-P-<Id>. Generic wrappers (program, components, packages,
+     invariants) stay generic. The prose sequencing of a hand-written charter becomes
+     a grep-able DAG via <depends_on><dep-P-.../></depends_on>.
+
+     Lifecycle status: draft | approved | applied. Each package spec links back via
+     <program> path + <package-id>; program-dag checks the DAG is acyclic, every
+     component is owned exactly once, and every deferral node ref resolves to a P node.
+     Lightweight variant = packages + DAG + seams (medium fan-out); full charter adds
+     invariants + decisions (formal/large). -->
+<program>
+  <status>draft</status>
+  <goal></goal>
+  <!-- the spec whose decomposition gate produced this program. -->
+  <origin-spec></origin-spec>
+  <components>
+    <C-EXAMPLE>
+      <name></name>
+      <responsibility></responsibility>
+    </C-EXAMPLE>
+  </components>
+  <packages>
+    <P-EXAMPLE>
+      <title></title>
+      <!-- filled when the package spec is created; links back to this program. -->
+      <spec></spec>
+      <!-- charter components this package owns (comma-separated C-<Id> refs). -->
+      <owns-components></owns-components>
+      <depends_on>
+        <dep-P-EXAMPLE/>
+      </depends_on>
+      <!-- the interface contract this package exposes to its consumers. -->
+      <seam-contract></seam-contract>
+      <!-- pending | spec-draft | spec-approved | executing | applied -->
+      <status>pending</status>
+    </P-EXAMPLE>
+  </packages>
+  <invariants>
+    <INV-1></INV-1>
+  </invariants>
+  <!-- prose rationale; the machine-checkable order is the depends_on DAG above. -->
+  <sequencing></sequencing>
+</program>

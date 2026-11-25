@@ -6,10 +6,11 @@ model:
     provider: zai
     model: glm-5.3
     reasoningEffort: max
-  # Every delegated child agent (subagent / fork / workflow / ralph) starts
-  # on DeepSeek Flash at max effort. Absolute: overrides preset agentOptions
-  # pins (including subagent_browser's vision model — deepseek-flash keeps
-  # image input, so the downgrade is safe for browser children).
+  # Default route for delegated child agents (subagent / fork / workflow /
+  # ralph) that inherit their route from the parent. An explicitly requested
+  # route — per-call subagent provider/model (e.g. the vv review lenses on
+  # openrouter/openai/gpt-6-luna and cursor/grok-4.7) or a preset agentOptions
+  # pin — is left alone; model.presets for the child's own preset outranks both.
   workers:
     provider: deepseek-account
     model: deepseek-flash

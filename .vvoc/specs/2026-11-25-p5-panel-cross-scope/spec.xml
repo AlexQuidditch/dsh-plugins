@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P5 package spec — dogfoods the P0 schema (paths + program membership).
+     Part of program .vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml (P-P5).
+     Design source: hive-research/vv-cross-scope-impact-rd.md §4.9/§12.4/§14.5/P5.
+     P5 is the optional panel polish: impact fan-out chip + addendum-pending state.
+     The v2 census items (weighted threshold, transitive, submodule) and full program
+     rollup are deferred follow-ups. No shared-surface deletion; impact-present not triggered. -->
+<spec>
+  <status>approved</status>
+  <goal>Surface the cross-scope state in the vv panel: an addendum-pending operational state (any non-terminal ADD-NNN in impact-addendum.xml blocks execution, attention styling, routes to vv-execute) and an impact fan-out suffix on the state chip (consumer-scopes from spec impact). Read impact-addendum.xml through the workspaceFiles bridge; extend STATE_SKILL, locale (en/ru), and the fallback state list.</goal>
+  <architecture>CLASSIFY_BOUNDARY: domain-only. Change confined to dsh-vv-panel/client.js (web-client plugin). State derivation stays file-based and honest (no fabricated state): addendum-pending is derived from the actual impact-addendum.xml ADD statuses; fan-out from the spec impact consumer-scopes. stale-approval still takes precedence. The host bridge is read-only.</architecture>
+  <program>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</program>
+  <package-id>P-P5</package-id>
+  <paths>
+    <P-001><path>dsh-vv-panel/client.js</path><role>modify</role></P-001>
+  </paths>
+  <components>
+    <C-PANEL>
+      <name>Panel cross-scope state</name>
+      <responsibility>addendum-pending state + impact fan-out chip + attention styling + locale + fallback state list; read impact-addendum.xml via workspaceFiles</responsibility>
+      <depends-on></depends-on>
+    </C-PANEL>
+  </components>
+  <testing>
+    <strategy>node --check client.js; activation.test.mjs passes; helper logic verified (hasPendingAddendum recorded→true/resolved→false; readImpactFanout extracts consumer-scopes). addendum-pending overrides execution states; stale-approval precedence preserved.</strategy>
+    <coverage>addendum-pending derivation; fan-out chip; attention styling; locale en/ru; fallback list; no fabricated state.</coverage>
+  </testing>
+  <non-goals>
+    <NG-001>v2 census items: weighted threshold, transitive census, submodule census — deferred follow-ups.</NG-001>
+    <NG-002>Full program rollup chip (package progress across .vvoc/programs/) — deferred follow-up.</NG-002>
+    <NG-003>cross-scope-fanout / cascade-concentration ERROR flip — after archive calibration.</NG-003>
+  </non-goals>
+</spec>

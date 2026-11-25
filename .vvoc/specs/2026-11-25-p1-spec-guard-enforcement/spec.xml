@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P1 package spec — dogfoods the P0 schema (paths + program membership).
+     Part of program .vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml (P-P1).
+     Design source: hive-research/vv-cross-scope-impact-rd.md §14.5/§20/§21;
+     contracts: dsh-vv-spec-guard/schemas/{census-contract,lint-rules}.json.
+     P1 implements enforcement against the frozen P0 seam. No shared-surface deletion
+     in the foundation sense, so impact-present is not triggered (no <impact> census). -->
+<spec>
+  <status>approved</status>
+  <goal>Implement spec-guard enforcement consuming the P0 seam: CDATA-aware parseXmlLite; generation-gap fix (gate the unconditional legacy package-attribute rule and legacy completeness vocabulary for unique-tag artifacts); the spec_guard_census host tool (TS compiler API over a worktree, DI-aware usage, edge kinds, canonical digest, partition, lifecycle); the new cross-scope lint rules with the host/engine split (host recomputes census, passes digest/values into lint options, lint compares only); register spec_guard_census; typescript runtime dependency; archive calibration with cross-scope-fanout shipping WARN.</goal>
+  <architecture>CLASSIFY_BOUNDARY: domain-only. Changes confined to dsh-vv-spec-guard (src/lint.ts pure engine, src/census.ts new host tool, src/index.ts host wiring, package.json runtime dep). The pure lint.ts engine stays zero-dependency and never does I/O; the census is a separate host tool (typescript runtime dep + git worktree + filesystem). The host reads sidecars and recomputes the census, then passes parsed options into the pure engine — preserving the §K host-supplies pattern.</architecture>
+  <program>.vvoc/programs/2026-11-25-vv-cross-scope-impact/program.xml</program>
+  <package-id>P-P1</package-id>
+  <paths>
+    <P-001><path>dsh-vv-spec-guard/src/census.ts</path><role>create</role></P-001>
+    <P-002><path>dsh-vv-spec-guard/src/lint.ts</path><role>modify</role></P-002>
+    <P-003><path>dsh-vv-spec-guard/src/index.ts</path><role>modify</role></P-003>
+    <P-004><path>dsh-vv-spec-guard/package.json</path><role>modify</role></P-004>
+    <P-005><path>dsh-vv-spec-guard/census.test.mjs</path><role>create</role></P-005>
+  </paths>
+  <components>
+    <C-CENSUS-ENGINE>
+      <name>spec_guard_census implementation</name>
+      <responsibility>runCensus per census-contract.json: worktree materialization + injected workspace resolver, TS program, DI-aware usage classification, edge kinds with barrel precedence, canonical digest, scope partition + owner/test exclusion, worktree lifecycle</responsibility>
+      <depends-on>C-LINT-ENFORCEMENT</depends-on>
+    </C-CENSUS-ENGINE>
+    <C-LINT-ENFORCEMENT>
+      <name>Lint enforcement</name>
+      <responsibility>CDATA-aware parseXmlLite; generation-gap fix; new cross-scope rules (impact-present, untouched-contradicted, census-impact-coverage, census-stale, census-ref-unreachable, census-path-unresolvable, cross-scope-fanout WARN, census-incomplete) consuming host-supplied census options; index.ts registers spec_guard_census and wires host recompute</responsibility>
+      <depends-on></depends-on>
+    </C-LINT-ENFORCEMENT>
+  </components>
+  <testing>
+    <strategy>Unit tests for CDATA parsing (TS generics/JSX snippets), generation-gap (unique-tag spec no longer hits the package-attribute rule), and each new rule with synthetic host-supplied census values. Census acceptance: runCensus on foundation at af92a878^ returns examinations as a runtime-import DI consumer of SchoolAuthorizationService; digest stable across runs; no leftover worktree.</strategy>
+    <coverage>CDATA corpus (33/36 throwing plans fixed); unique-tag spec/plan structural rules; host/engine split (lint never recomputes census); census witness + determinism + lifecycle.</coverage>
+  </testing>
+  <non-goals>
+    <NG-001>Skill SKILL.md wiring (vv-spec/vv-plan) — P2/P3.</NG-001>
+    <NG-002>Execution feedback (reason codes, addendum, undeclared-deletion, stale-impact pre-flight) — P4.</NG-002>
+    <NG-003>cascade-concentration / consumer-coverage / program-dag plan rules — P3.</NG-003>
+    <NG-004>cross-scope-fanout ERROR mode — only after archive calibration; P1 ships WARN.</NG-004>
+    <NG-005>Panel impact chip / v2 items — P5.</NG-005>
+  </non-goals>
+</spec>

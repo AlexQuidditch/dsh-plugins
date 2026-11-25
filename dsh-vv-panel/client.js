@@ -76,6 +76,7 @@ window.__ModuleLoader__.load({
     // heuristic in §P).
     const SPECS_DIR = '.vvoc/specs';
     const ARCHIVE_DIR = 'archive';
+    const PROGRAMS_DIR = '.vvoc/programs';
     const STATE_SKILL = {
       'draft-spec': 'vv-spec',
       'awaiting-spec-approval': 'vv-spec',
@@ -84,6 +85,7 @@ window.__ModuleLoader__.load({
       'awaiting-plan-approval': 'vv-plan',
       'ready-to-execute': 'vv-execute',
       'executing': 'vv-execute',
+      'addendum-pending': 'vv-execute',
       'awaiting-review': 'vv-review',
       'applied': 'vv-reflect',
       'stale-approval': 'vv-plan',
@@ -114,6 +116,26 @@ window.__ModuleLoader__.load({
     /** §P `awaiting-spec-approval` heuristic: the interview produced goals + requirements. */
     function hasInterviewArtifacts(text) {
       return typeof text === 'string' && /<goal\b/i.test(text) && /<requirement\b/i.test(text);
+    }
+
+    /** P5: an impact-addendum.xml with any non-terminal ADD-NNN means a pending discovery. */
+    const ADDENDUM_TERMINAL = ['resolved', 'resolved-deferred', 'resolved-spawned'];
+    function hasPendingAddendum(text) {
+      if (typeof text !== 'string' || text.trim() === '') return false;
+      const entries = text.match(/<ADD-\d+>[\s\S]*?<\/ADD-\d+>/g) || [];
+      for (const entry of entries) {
+        const status = /<status>\s*([^<]*?)\s*<\/status>/i.exec(entry);
+        const value = status ? status[1].trim().toLowerCase() : '';
+        if (ADDENDUM_TERMINAL.indexOf(value) === -1) return true;
+      }
+      return false;
+    }
+
+    /** P5: extract the impact fan-out (consumer scopes) from spec.xml for the chip. */
+    function readImpactFanout(specText) {
+      if (typeof specText !== 'string') return undefined;
+      const match = /<consumer-scopes>\s*(\d+)\s*<\/consumer-scopes>/i.exec(specText);
+      return match ? Number(match[1]) : undefined;
     }
 
     /** Last approvals.json entry for one artifact wins (§K). */
@@ -194,8 +216,15 @@ window.__ModuleLoader__.load({
         return { kind: 'state', state: 'stale-approval', skill: stale === 'spec.xml' ? 'vv-spec' : 'vv-plan', artifact: stale };
       }
 
-      const done = (state, extra) => ({ kind: 'state', state, skill: STATE_SKILL[state], ...(extra || {}) });
+      const fanout = readImpactFanout(input.specText);
+      const done = (state, extra) => ({ kind: 'state', state, skill: STATE_SKILL[state], ...(fanout !== undefined ? { fanout } : {}), ...(extra || {}) });
       const specApproved = specStatus === 'approved' || specStatus === 'applied';
+
+      // P5: a pending (non-terminal) addendum overrides the execution states — resolve
+      // the discovery before continuing. stale-approval still takes precedence above.
+      if (hasPendingAddendum(input.addendumText)) {
+        return done('addendum-pending');
+      }
 
       if (input.planText === undefined) {
         if (!specApproved) {
@@ -274,7 +303,8 @@ window.__ModuleLoader__.load({
       // Sidecars are optional: absence is a fact (no approvals / no receipts), not an error.
       const approvals = await readWorkspaceFile(workspaceFiles, sessionId, `${base}/approvals.json`, signal);
       const receipts = await readWorkspaceFile(workspaceFiles, sessionId, `${base}/receipts.jsonl`, signal);
-      const sidecarFailure = [approvals, receipts].filter((file) => file.failure !== undefined)[0];
+      const addendum = await readWorkspaceFile(workspaceFiles, sessionId, `${base}/impact-addendum.xml`, signal);
+      const sidecarFailure = [approvals, receipts, addendum].filter((file) => file.failure !== undefined)[0];
       if (sidecarFailure) return { kind: 'unavailable', reason: sidecarFailure.failure };
 
       const derived = await deriveOperationalState({
@@ -285,9 +315,40 @@ window.__ModuleLoader__.load({
         planBytes: plan.missing === true ? undefined : plan.bytes,
         approvalsText: approvals.missing === true ? undefined : approvals.text,
         receiptsText: receipts.missing === true ? undefined : receipts.text,
+        addendumText: addendum.missing === true ? undefined : addendum.text,
       });
       if (derived.kind !== 'state') return derived;
-      return { packageId, ...derived };
+      const program = await scanProgramRollup(workspaceFiles, sessionId, signal);
+      return { packageId, ...derived, ...(program ? { program } : {}) };
+    }
+
+    /**
+     * Follow-up #5: read .vvoc/programs/, pick the latest program, and roll up package
+     * statuses (applied / total). Returns undefined when no program exists. File-derived,
+     * never fabricated.
+     */
+    async function scanProgramRollup(workspaceFiles, sessionId, signal) {
+      const listed = await remoteCall(() => workspaceFiles.list(sessionId, PROGRAMS_DIR, signal));
+      if (listed.failure) return undefined;
+      const listValue = listed.value && typeof listed.value === 'object' ? listed.value : {};
+      const entries = Array.isArray(listValue.entries) ? listValue.entries : [];
+      const programIds = entries
+        .filter((entry) => entry && entry.type === 'directory')
+        .map((entry) => entry.name)
+        .filter((name) => typeof name === 'string' && name !== '' && name !== '..' && !/[\\/]/.test(name));
+      if (programIds.length === 0) return undefined;
+      programIds.sort();
+      const programId = programIds[programIds.length - 1];
+      const file = await readWorkspaceFile(workspaceFiles, sessionId, `${PROGRAMS_DIR}/${programId}/program.xml`, signal);
+      if (file.missing === true || file.failure !== undefined || typeof file.text !== 'string') return undefined;
+      const packages = file.text.match(/<P-[A-Za-z0-9_-]+>[\s\S]*?<\/P-[A-Za-z0-9_-]+>/g) || [];
+      if (packages.length === 0) return undefined;
+      let applied = 0;
+      for (const pkg of packages) {
+        const status = /<status>\s*([^<]*?)\s*<\/status>/i.exec(pkg);
+        if (status && status[1].trim().toLowerCase() === 'applied') applied += 1;
+      }
+      return { programId, applied, total: packages.length };
     }
     // ─── end operational-state derivation ───
 
@@ -301,7 +362,7 @@ window.__ModuleLoader__.load({
       'Otherwise run the spec_guard_lint tool on that package directory (.vvoc/specs/<id>/) and read the package files: spec.xml, plan.xml, approvals.json, receipts.jsonl.',
       'Then report exactly this, without editing any file:',
       '',
-      'operational-state: <one of: draft-spec, awaiting-spec-approval, spec-approved, draft-plan, awaiting-plan-approval, ready-to-execute, executing, awaiting-review, applied, stale-approval, archived, no-package>',
+      'operational-state: <one of: draft-spec, awaiting-spec-approval, spec-approved, draft-plan, awaiting-plan-approval, ready-to-execute, executing, addendum-pending, awaiting-review, applied, stale-approval, archived, no-package>',
       'package: <package path>',
       'next: /<vv-spec|vv-plan|vv-execute|vv-review|vv-reflect|vv-handoff>',
       'why: <one short line>',
@@ -323,6 +384,7 @@ window.__ModuleLoader__.load({
         'state.tooltip.none': 'No .vvoc/specs package in this workspace. Click: /vv-spec to start.',
         'state.tooltip': '{id} — {state}. Click: /{skill}',
         'state.tooltip.stale': '{id} — stale-approval ({artifact}). Re-approval required. Click: /{skill}',
+        'state.tooltip.addendum': '{id} — addendum-pending: an unresolved scope-cascade discovery blocks execution. Click: /{skill}',
         'state.fallback': 'state',
         'state.tooltip.fallback': 'Live state unavailable ({reason}). Click: ask the agent to run spec_guard_lint on the active package and report one line.',
       },
@@ -338,6 +400,7 @@ window.__ModuleLoader__.load({
         'state.tooltip.none': 'В рабочей области нет пакета .vvoc/specs. Клик: /vv-spec, чтобы начать.',
         'state.tooltip': '{id} — {state}. Клик: /{skill}',
         'state.tooltip.stale': '{id} — stale-approval ({artifact}). Нужно повторное согласование. Клик: /{skill}',
+        'state.tooltip.addendum': '{id} — addendum-pending: неразрешённое обнаружение scope-каскада блокирует исполнение. Клик: /{skill}',
         'state.fallback': 'состояние',
         'state.tooltip.fallback': 'Живое состояние недоступно ({reason}). Клик: попросить агента прогнать spec_guard_lint по активному пакету и отчитаться одной строкой.',
       },
@@ -360,13 +423,17 @@ window.__ModuleLoader__.load({
       if (scan.kind === 'state') {
         const title = scan.state === 'stale-approval'
           ? key('state.tooltip.stale')
-          : key('state.tooltip');
+          : scan.state === 'addendum-pending'
+            ? key('state.tooltip.addendum')
+            : key('state.tooltip');
+        const fanoutSuffix = typeof scan.fanout === 'number' ? ` · impact:${scan.fanout}` : '';
+        const programSuffix = scan.program ? ` · prog:${scan.program.applied}/${scan.program.total}` : '';
         return {
-          label: scan.state,
+          label: scan.state + fanoutSuffix + programSuffix,
           title: title.replace('{id}', scan.packageId).replace('{state}', scan.state).replace('{artifact}', scan.artifact || '')
             .replace('{skill}', scan.skill),
           skill: scan.skill,
-          className: 'vv-panel-chip--state' + (scan.state === 'stale-approval' ? ' vv-panel-chip--attention' : ''),
+          className: 'vv-panel-chip--state' + ((scan.state === 'stale-approval' || scan.state === 'addendum-pending') ? ' vv-panel-chip--attention' : ''),
         };
       }
       if (scan.kind === 'no-package') {

@@ -63,10 +63,47 @@ export interface LintApprovalOptions {
     /** True when a package approvals.json sidecar exists at all. */
     approvalSidecarPresent?: boolean;
 }
+/**
+ * Host-supplied census data for the P1 cross-scope rules (host/engine split): the
+ * HOST recomputes the census and passes values in; the pure lint engine only
+ * compares. Mirrors the §K host-supplies-digest pattern. When absent, the
+ * census-dependent rules degrade to a `census-unavailable` warning (never silent pass).
+ */
+export interface CensusLintData {
+    /** Per-scope hard-edge consumers from the host census (production scopes). */
+    perScope?: Array<{
+        scope: string;
+        hardCount: number;
+        edges: Array<{
+            kind: string;
+            source: string;
+            target: string;
+        }>;
+    }>;
+    /** Host re-computed canonical census digest at the pinned ref. */
+    outputDigest?: string;
+    /** False when the pinned ref is unreachable (shallow clone / GC). */
+    refReachable?: boolean;
+    /** Declared delete/rename paths that failed resolution at baselineRef. */
+    pathUnresolvable?: string[];
+    /** The spec-pinned census set for census-incomplete (plan ⊆ spec set). */
+    specCensusSet?: {
+        symbols: string[];
+        paths: string[];
+    };
+    /** Distinct-production-scope fan-out threshold (overlay-configurable; default 3). */
+    fanoutThreshold?: number;
+    /** cross-scope-fanout mode: warn (pre-calibration) | error (post-calibration). */
+    fanoutMode?: 'warn' | 'error';
+    /** cascade-concentration threshold (shared-surface deletes/renames in one task). */
+    cascadeThreshold?: number;
+}
 /** Options for lintSpec. */
 export interface SpecLintOptions extends LintApprovalOptions {
     /** Override the lifecycle status (defaults to the root `status` attribute). */
     status?: string;
+    /** P1: host-supplied census data for the cross-scope rules. */
+    census?: CensusLintData;
 }
 /** One receipts.jsonl line as far as the lint engine needs it (§L). */
 export interface ReceiptLike {
@@ -84,6 +121,8 @@ export interface PlanLintOptions extends LintApprovalOptions {
     receipts?: ReceiptLike[];
     /** Require receipt coverage even when the plan status is not `applied`. */
     checkReceipts?: boolean;
+    /** P1: host-supplied census data (spec-pinned set) for census-incomplete. */
+    census?: CensusLintData;
 }
 /**
  * Lint one spec.xml against the vv-spec contract.
@@ -112,6 +151,23 @@ export declare function lintSpec(text: string, options?: SpecLintOptions): LintV
  * `exit_code: 0`.
  */
 export declare function lintPlan(text: string, options?: PlanLintOptions): LintVerdict;
+/**
+ * program-dag (PROGRAM lint): the package DAG is acyclic, every dep-P ref resolves to
+ * a declared P node, and every charter component is owned by exactly one package.
+ */
+export declare function lintProgram(text: string, options?: SpecLintOptions): LintVerdict;
+/**
+ * unresolved-addendum (P4 read-side): any ADD-NNN whose status is not terminal blocks
+ * validate-plan. An addendum recorded by a dead executor must not rot silently — the
+ * next invocation sees it here. Host reads impact-addendum.xml and passes the text in.
+ */
+export declare function lintAddendum(text: string, _options?: SpecLintOptions): LintVerdict;
+/**
+ * unverified-invariant: any IV-NNN in invariant-verification.xml whose status is not
+ * discharged (verified/waived) blocks plan-close. A behavioral GRACE invariant surfaced as
+ * at-risk becomes a tracked obligation; it cannot be silently ignored. Pure text check.
+ */
+export declare function lintInvariantVerification(text: string, _options?: SpecLintOptions): LintVerdict;
 /** Fixed risk-category order (hive's five categories, vv-adapted). */
 export declare const PLAN_RISK_CATEGORIES: readonly ["auth_secrets_permissions", "destructive_data_schema", "public_compatibility", "concurrency_recovery_ownership", "deployment_release_supply_chain"];
 /** One of the five §N risk categories. */

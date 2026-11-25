@@ -25,6 +25,18 @@
 > (`AgentModel.current/select`, projection `modelSelection`, `installModelSelection`)
 > и `@deepseek-ai/dsh-agent-loop` (`preStep`, `prepareRequest`, шаг-цикл).
 
+> **⚠️ ПОПРАВКА 2026-11-25: «правило абсолютности» workers снято.** Изначальное ТЗ
+> (§3.3, ниже) требовало, чтобы `model.workers` перекрывал закрепления пресетов и
+> per-call маршруты детей. Живой случай показал цену: ревью-линзы vv-протокола
+> (`openrouter/openai/gpt-6-luna`, `cursor/grok-4.7`) молча ехали на
+> `deepseek-account/deepseek-flash`, потому что политика переписывала маршрут
+> каждого ребёнка на `agent/created`. Теперь `model.workers` — **дефолт только для
+> наследуемого маршрута**: явно запрошенный маршрут (per-call `subagent`
+> provider/model или `agentOptions` пресета) политика не трогает (passthrough
+> `explicit-child-route`), а `model.presets` для пресета ребёнка сильнее обоих.
+> Детали и ограничения — README, раздел «Дочерние агенты»; тесты —
+> `tests/decide.test.ts`, `tests/lifecycle.test.ts`.
+
 ---
 
 ## 0. Контекст и окружение

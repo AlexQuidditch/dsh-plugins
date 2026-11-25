@@ -1,0 +1,10 @@
+{
+  "approvals": [
+    {
+      "artifact": "spec.xml",
+      "sha256": "b1b62547493a9525cbe070c2c4d90f83104d59a57d14e84770629c283388377a",
+      "status_at_approval": "approved",
+      "approved_at": "2026-11-25T14:11:14.129Z"
+    }
+  ]
+}
