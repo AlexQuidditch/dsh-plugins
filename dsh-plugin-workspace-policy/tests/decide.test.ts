@@ -15,6 +15,7 @@ import type { PolicyRoute, WorkspacePolicy } from '../src/types.ts'
 
 const DEFAULT_ROUTE: PolicyRoute = { provider: 'zai', model: 'glm-5.3', reasoningEffort: 'max' }
 const WORKERS_ROUTE: PolicyRoute = { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'max' }
+const PRESET_ROUTE: PolicyRoute = { provider: 'cursor', model: 'default' }
 
 const POLICY: WorkspacePolicy = {
   model: {
@@ -111,6 +112,29 @@ describe('pickStartupRoute — master sessions', () => {
     const pick = startupPick(state, { policy: { model: { workers: WORKERS_ROUTE }, budget: {} } })
     expect(pick).toEqual({ kind: 'passthrough', reason: 'no-default-route' })
   })
+
+  it('selects the preset route over the master route for a fresh session', () => {
+    const state = freshState('startup')
+    const pick = startupPick(state, { presetRoute: PRESET_ROUTE })
+    expect(pick).toEqual({ kind: 'route', route: PRESET_ROUTE, reason: 'preset-policy' })
+    expect(state.resolved).toBe(true)
+  })
+
+  it('lets a durable user selection outrank the preset route', () => {
+    const state = freshState('startup')
+    expect(startupPick(state, { presetRoute: PRESET_ROUTE, hasPendingUserSelection: true })).toEqual({
+      kind: 'passthrough',
+      reason: 'user-selection-pending',
+    })
+  })
+
+  it('still refuses to touch a resumed session even with a preset route', () => {
+    const state = freshState('resume')
+    expect(startupPick(state, { presetRoute: PRESET_ROUTE })).toEqual({
+      kind: 'passthrough',
+      reason: 'not-fresh-session',
+    })
+  })
 })
 
 describe('pickStartupRoute — workers', () => {
@@ -124,6 +148,12 @@ describe('pickStartupRoute — workers', () => {
     const state = freshState('startup')
     const pick = startupPick(state, { isWorker: true, policy: { model: { default: DEFAULT_ROUTE }, budget: {} } })
     expect(pick).toEqual({ kind: 'passthrough', reason: 'no-workers-route' })
+  })
+
+  it('selects the preset route over the workers route, unconditionally', () => {
+    const state = freshState('resume')
+    const pick = startupPick(state, { isWorker: true, hasLoggedHeader: true, presetRoute: PRESET_ROUTE })
+    expect(pick).toEqual({ kind: 'route', route: PRESET_ROUTE, reason: 'preset-policy' })
   })
 })
 

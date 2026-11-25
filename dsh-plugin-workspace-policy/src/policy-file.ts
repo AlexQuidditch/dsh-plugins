@@ -91,7 +91,7 @@ export function parsePolicyFile(text: string): ParsedPolicyFile {
       problems.push('"model" must be a mapping')
     } else {
       for (const key of Object.keys(modelValue)) {
-        if (key !== 'default' && key !== 'workers' && key !== 'fallback') {
+        if (key !== 'default' && key !== 'workers' && key !== 'fallback' && key !== 'presets') {
           notes.push(`model: unknown key "${key}" ignored`)
         }
       }
@@ -115,6 +115,24 @@ export function parsePolicyFile(text: string): ParsedPolicyFile {
             if (route !== undefined) chain.push(route)
           })
           if (chain.length > 0) modelSection.fallback = chain
+        }
+      }
+      const presetsValue = asModel['presets']
+      if (presetsValue !== undefined) {
+        if (presetsValue === null || typeof presetsValue !== 'object' || Array.isArray(presetsValue)) {
+          problems.push('model.presets must be a mapping of preset id to route')
+        } else {
+          const presets: Record<string, PolicyRoute> = {}
+          for (const [rawId, value] of Object.entries(presetsValue as Record<string, unknown>)) {
+            const id = rawId.trim()
+            if (id.length === 0) {
+              problems.push('model.presets has an empty preset id')
+              continue
+            }
+            const route = readRoute(value, `model.presets["${id}"]`, problems, notes)
+            if (route !== undefined) presets[id] = route
+          }
+          if (Object.keys(presets).length > 0) modelSection.presets = presets
         }
       }
     }
@@ -147,6 +165,7 @@ export function parsePolicyFile(text: string): ParsedPolicyFile {
   const hasRoutes = modelSection.default !== undefined
     || modelSection.workers !== undefined
     || (modelSection.fallback?.length ?? 0) > 0
+    || (modelSection.presets !== undefined && Object.keys(modelSection.presets).length > 0)
   if (!hasRoutes) return { policy: null, problem: null, notes }
   return { policy, problem: null, notes }
 }

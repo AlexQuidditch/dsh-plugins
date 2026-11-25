@@ -25,6 +25,13 @@ export interface PolicyModelSection {
   workers?: PolicyRoute
   /** Ordered one-shot degradation chain for terminal route failures. */
   fallback?: PolicyRoute[]
+  /**
+   * Per-agent-preset routes, keyed by the Session projection's `agentPreset`
+   * id (e.g. `cursor/vv-controller`). A hit wins over `default`/`workers` for
+   * that exact preset: masters keep the freshness guards, workers are
+   * unconditional like `workers`.
+   */
+  presets?: Record<string, PolicyRoute>
 }
 
 /** `budget:` section of the workspace policy file. */
@@ -43,7 +50,11 @@ export interface WorkspacePolicy {
 export function isPolicyActionable(policy: WorkspacePolicy | null | undefined): boolean {
   if (policy === null || policy === undefined) return false
   const { model } = policy
-  return model.default !== undefined || model.workers !== undefined || (model.fallback?.length ?? 0) > 0
+  const hasPresets = model.presets !== undefined && Object.keys(model.presets).length > 0
+  return model.default !== undefined
+    || model.workers !== undefined
+    || (model.fallback?.length ?? 0) > 0
+    || hasPresets
 }
 
 /** Lifecycle status of one workspace-root policy slot inside the store. */

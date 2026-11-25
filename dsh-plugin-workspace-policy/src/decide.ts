@@ -98,7 +98,7 @@ export type PassthroughReason =
 
 /** Result of choosing what route applies to one newly created agent. */
 export type StartupRoutePick =
-  | { kind: 'route'; route: PolicyRoute; reason: 'master-policy' | 'workers-policy' }
+  | { kind: 'route'; route: PolicyRoute; reason: 'master-policy' | 'workers-policy' | 'preset-policy' }
   | { kind: 'passthrough'; reason: PassthroughReason }
 
 /** Inputs of {@link pickStartupRoute}. */
@@ -110,6 +110,13 @@ export interface PickStartupRouteInput {
   sessionSource: SessionStartSourceLite | null
   hasLoggedHeader: boolean
   hasPendingUserSelection: boolean
+  /**
+   * Route registered for the agent's exact preset id (`model.presets`), when
+   * the Session projection names a preset with one. A hit outranks
+   * `model.default`/`model.workers`; masters keep the freshness guards,
+   * workers stay unconditional.
+   */
+  presetRoute?: PolicyRoute | undefined
 }
 
 /**
@@ -121,15 +128,15 @@ export interface PickStartupRouteInput {
  * untouched (a later durable selection simply supersedes the policy's).
  */
 export function pickStartupRoute(input: PickStartupRouteInput): StartupRoutePick {
-  const { state, policy, isWorker, sessionSource, hasLoggedHeader, hasPendingUserSelection } = input
+  const { state, policy, isWorker, sessionSource, hasLoggedHeader, hasPendingUserSelection, presetRoute } = input
 
   if (state.resolved) return { kind: 'passthrough', reason: 'already-decided' }
 
   if (isWorker) {
     state.resolved = true
-    const route = policy.model.workers
+    const route = presetRoute ?? policy.model.workers
     if (route === undefined) return { kind: 'passthrough', reason: 'no-workers-route' }
-    return { kind: 'route', route, reason: 'workers-policy' }
+    return { kind: 'route', route, reason: presetRoute !== undefined ? 'preset-policy' : 'workers-policy' }
   }
 
   if (sessionSource !== 'startup') {
@@ -146,9 +153,9 @@ export function pickStartupRoute(input: PickStartupRouteInput): StartupRoutePick
   }
 
   state.resolved = true
-  const route = policy.model.default
+  const route = presetRoute ?? policy.model.default
   if (route === undefined) return { kind: 'passthrough', reason: 'no-default-route' }
-  return { kind: 'route', route, reason: 'master-policy' }
+  return { kind: 'route', route, reason: presetRoute !== undefined ? 'preset-policy' : 'master-policy' }
 }
 
 /** Result of validating one candidate route into a selectable route. */

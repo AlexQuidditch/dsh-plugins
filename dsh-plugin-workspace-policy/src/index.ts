@@ -4,8 +4,9 @@
  * Gives each workspace its own LLM route policy: a `.dsh/workspace.yaml`
  * file at the workspace root defines the route for master sessions
  * (`model.default`), the route for every delegated child agent
- * (`model.workers`), and an ordered fallback chain for terminal route
- * failures.
+ * (`model.workers`), per-agent-preset routes (`model.presets`, keyed by the
+ * Session projection's `agentPreset` id — e.g. `cursor/vv-controller`), and an
+ * ordered fallback chain for terminal route failures.
  *
  * 0.2.2 seam. DSH 0.2.2 fixes an agent step's provider/model/effort before
  * the `agent/request` waterfall, which may adjust only request controls;
@@ -47,7 +48,7 @@ import type {
   SessionStartSourceLite,
 } from './decide.ts'
 import { WorkspacePolicyStore } from './policy-store.ts'
-import type { PolicySlot } from './types.ts'
+import type { PolicySlot, WorkspacePolicy } from './types.ts'
 import { isPolicyActionable } from './types.ts'
 
 // Type-only imports: they load the Cordis module augmentations (the agent
@@ -112,9 +113,14 @@ interface WorkspaceRegistryLike {
   resolveByPath(path: string): Promise<{ path: string } | undefined>
 }
 
+/** Minimal structural view of the agents service (live Agent by session id). */
+interface AgentsLike {
+  get(id: string): AgentLike | undefined
+}
+
 /** Minimal structural view of the session-projection service. */
 interface SessionProjectionsLike {
-  stateOf(session: object, key: string): { pending?: unknown } | undefined
+  stateOf(session: object, key: string): unknown | undefined
 }
 
 /** Minimal structural view of `AgentModel` (0.2.2 model-selection seam). */
@@ -165,6 +171,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
   const llm = ctx.get('llm') as LlmLike | undefined
   const workspaceRegistry = ctx.get('workspaceRegistry') as WorkspaceRegistryLike | undefined
   const sessionProjections = ctx.get('sessionProjections') as SessionProjectionsLike | undefined
+  const agents = ctx.get('agents') as AgentsLike | undefined
 
   const store = new WorkspacePolicyStore({
     configFileName: settings.configFileName,
@@ -205,11 +212,33 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
   function hasPendingUserSelection(agent: AgentLike): boolean {
     if (sessionProjections === undefined) return false
     try {
-      const state = sessionProjections.stateOf(agent.session, 'modelSelection')
+      const state = sessionProjections.stateOf(agent.session, 'modelSelection') as { pending?: unknown } | undefined
       return state?.pending !== undefined && state.pending !== null
     } catch {
       return false
     }
+  }
+
+  /**
+   * The Session projection's `agentPreset` id, maintained by the preset
+   * registry from the session header and `agent-preset/selected` events. It
+   * is authoritative after a mid-lifecycle preset switch, where the header
+   * alone would be stale.
+   */
+  function presetOf(agent: AgentLike): string | undefined {
+    if (sessionProjections === undefined) return undefined
+    try {
+      const state = sessionProjections.stateOf(agent.session, 'agentPreset')
+      return typeof state === 'string' && state.length > 0 ? state : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Route registered for this agent's exact preset id, when the policy has one. */
+  function presetRouteFor(policy: WorkspacePolicy, presetId: string | undefined) {
+    if (presetId === undefined) return undefined
+    return policy.model.presets?.[presetId]
   }
 
   async function workspaceRootFor(cwd: string): Promise<string> {
@@ -352,6 +381,7 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
         sessionSource: state.sessionSource,
         hasLoggedHeader: agent.session.requestHeader() !== undefined,
         hasPendingUserSelection: hasPendingUserSelection(agent),
+        presetRoute: presetRouteFor(slot.policy, presetOf(agent)),
       })
       if (pick.kind === 'passthrough') {
         if (settings.log && pick.reason !== 'already-decided') {
@@ -367,6 +397,45 @@ export function apply(ctx: Context, input: WorkspacePolicyRowConfig = {}): void 
       await selectRoute(agent, pick.route, slot.policy.budget, pick.reason)
     } catch (error) {
       ctx.logger.warn('[workspace-policy] agent/created listener failed; leaving the route untouched: %o', error)
+    }
+  })
+
+  // ── preset switch on a fresh session ──────────────────────────────────────
+  //
+  // The GUI creates a draft Session immediately (with the default preset), so
+  // `agent/created` has already resolved the route by the time the composer's
+  // preset picker switches to e.g. `cursor/vv-controller`. The registry emits
+  // `agent-preset/selected` only for sessions that have not started a turn, so
+  // this listener re-selects the route for the new preset (or restores the
+  // workspace default when the new preset has no `model.presets` entry).
+  // A pending user model selection still wins.
+  const presetOn = ctx.on as unknown as (
+    name: string,
+    listener: (sessionId: string, presetId: string) => unknown,
+  ) => unknown
+
+  presetOn('agent-preset/selected', async (sessionId: string, presetId: string) => {
+    try {
+      const agent = agents?.get?.(sessionId)
+      if (agent === undefined || modelOf(agent) === null) return
+      if (agent.session.requestHeader() !== undefined) return
+      if (hasPendingUserSelection(agent)) return
+      const slot = await policySlotFor(agent)
+      if (slot === null || slot.policy === null) return
+      const id = typeof presetId === 'string' && presetId.length > 0 ? presetId : undefined
+      const route = presetRouteFor(slot.policy, id)
+        ?? (isWorkerAgent(agent) ? slot.policy.model.workers : slot.policy.model.default)
+      if (route === undefined) return
+      const selected = await selectRoute(agent, route, slot.policy.budget, `preset ${id ?? '(none)'}`)
+      if (selected && settings.log) {
+        ctx.logger.info(
+          '[workspace-policy] agent %s: preset switched to %s; route re-selected',
+          String(agent.session.header.id ?? ''),
+          id ?? '(none)',
+        )
+      }
+    } catch (error) {
+      ctx.logger.warn('[workspace-policy] agent-preset/selected listener failed; leaving the route untouched: %o', error)
     }
   })
   // The legacy 0.1 spelling. It is declared only by pre-0.2 typings and never

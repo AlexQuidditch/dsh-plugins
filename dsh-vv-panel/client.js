@@ -6,8 +6,9 @@
  * cluster, i.e. right after the permission selector ("Workspace Write")
  * and before the trailing controls (Vision, model, send). Six small chip
  * buttons, one per vv-* skill, plus one operational-state chip; the panel
- * renders ONLY in sessions whose `agentPreset` projection equals
- * TARGET_PRESET, so other presets never see it.
+ * renders ONLY in sessions whose `agentPreset` projection is one of
+ * TARGET_PRESETS (`vv-controller`, `cursor/vv-controller`), so other presets
+ * never see it.
  *
  * Auto-run mechanics. A click composes `/skill-name` (+ any text the user
  * already typed in the composer, appended as context after a blank line)
@@ -52,7 +53,9 @@ window.__ModuleLoader__.load({
     const useEffect = React.useEffect;
 
     // ── tunables (kept in one place; move to plugin Config if they churn) ──
-    const TARGET_PRESET = 'vv-controller';
+    // Both vv families show the panel: the DeepSeek/GLM `vv-controller` and the
+    // Cursor derivative `cursor/vv-controller` (same vv workflow, cursor route).
+    const TARGET_PRESETS = new Set(['vv-controller', 'cursor/vv-controller']);
     const SKILLS = [
       { name: 'vv-spec', tipKey: 'tip.spec' },
       { name: 'vv-plan', tipKey: 'tip.plan' },
@@ -401,7 +404,7 @@ window.__ModuleLoader__.load({
       const canRead = useAccess ? useAccess('workspaceFiles/list') : undefined;
       const [scan, setScan] = useState({ kind: 'loading' });
 
-      const enabled = preset === TARGET_PRESET;
+      const enabled = TARGET_PRESETS.has(preset);
       const sessionId = props.sessionId;
       const getRemote = props.vvRemote;
       const remoteReady = typeof getRemote === 'function';

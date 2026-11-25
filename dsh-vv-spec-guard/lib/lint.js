@@ -194,17 +194,38 @@ function verificationCommands(root) {
     const commands = [];
     for (const wrapper of collect(root, /^(?:verification|verify)$/)) {
         for (const command of collect(wrapper, /^command$/)) {
-            const value = (command.text ?? '').trim();
+            const value = normalizeCommand(command.text ?? '');
             if (value !== '')
                 commands.push(value);
         }
     }
     return [...new Set(commands)];
 }
+
+/**
+ * Decode the five predefined XML entities plus numeric character references.
+ * `parseXmlLite` keeps an element's raw text, so a plan whose command carries
+ * `&amp;&amp;` must be decoded before it is compared with a receipts line that
+ * stores the literal `&&`.
+ */
+function decodeXmlEntities(value) {
+    return value
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+        .replace(/&#x([0-9a-fA-F]+);/g, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+        .replace(/&amp;/g, '&');
+}
+/** Commands compare on decoded, trimmed text so escaped and literal forms match. */
+function normalizeCommand(value) {
+    return decodeXmlEntities(value).trim();
+}
 /** §L: every declared verification command must have an exit_code 0 receipt. */
 function checkVerificationReceipts(verdict, root, receipts) {
     for (const command of verificationCommands(root)) {
-        const matching = receipts.filter((receipt) => typeof receipt.command === 'string' && receipt.command.trim() === command);
+        const matching = receipts.filter((receipt) => typeof receipt.command === 'string' && normalizeCommand(receipt.command) === command);
         if (matching.length === 0) {
             verdict.errors.push({
                 rule: 'receipt-missing',

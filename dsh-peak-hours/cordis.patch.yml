@@ -42,7 +42,7 @@
         maxHoldMinutes: 20    # longer remaining windows requeue instead of holding
         checkpoint: true      # flush the session before a pause
       allowPeak: false        # global default: peak work is NOT allowed
-      dailyLimitMinutes: 30   # peak-allowed conversation minutes per day; null = unlimited
+      dailyLimitMinutes: null # peak-allowed conversation minutes per day; null = unlimited
       prePeakWarningMinutes: 10
       backgroundPolicy: allow # session-title / compaction / auto-review during peak: allow|warn|block
       schedules:

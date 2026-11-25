@@ -46,6 +46,56 @@ budget:
     })
   })
 
+  it('parses per-preset routes (quoted ids with a slash)', () => {
+    const result = parsePolicyFile(`
+model:
+  presets:
+    "cursor/vv-controller":
+      provider: cursor
+      model: default
+    "cursor/vv-worker":
+      provider: cursor
+      model: default
+`)
+    expect(result.problem).toBeNull()
+    expect(result.policy).toEqual({
+      model: {
+        presets: {
+          'cursor/vv-controller': { provider: 'cursor', model: 'default' },
+          'cursor/vv-worker': { provider: 'cursor', model: 'default' },
+        },
+      },
+      budget: {},
+    })
+  })
+
+  it('treats a presets-only document as actionable', () => {
+    const result = parsePolicyFile(`
+model:
+  presets:
+    vv-controller:
+      provider: zai
+      model: glm-5.3
+`)
+    expect(result.problem).toBeNull()
+    expect(result.policy).not.toBeNull()
+  })
+
+  it('reports a non-mapping presets section', () => {
+    const result = parsePolicyFile('model:\n  presets: [cursor 500k]')
+    expect(result.problem).toContain('model.presets must be a mapping')
+  })
+
+  it('reports a broken route inside presets with its preset id', () => {
+    const result = parsePolicyFile(`
+model:
+  presets:
+    "cursor/vv-controller":
+      provider: cursor
+`)
+    expect(result.problem).toContain('model.presets["cursor/vv-controller"]')
+  })
+
   it('reports broken YAML with a problem', () => {
     const result = parsePolicyFile('model: [unclosed')
     expect(result.policy).toBeNull()

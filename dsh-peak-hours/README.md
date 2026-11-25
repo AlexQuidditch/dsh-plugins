@@ -138,7 +138,7 @@ config:
     maxHoldMinutes: 20
     checkpoint: true
   allowPeak: false            # глобальный дефолт «разрешить пик»
-  dailyLimitMinutes: 30       # null = без лимита
+  dailyLimitMinutes: null     # null = без лимита (текущий дефолт)
   prePeakWarningMinutes: 10
   backgroundPolicy: allow     # session-title / compaction / auto-review: allow|warn|block
   schedules:

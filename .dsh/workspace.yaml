@@ -11,10 +11,22 @@ model:
   # pins (including subagent_browser's vision model — deepseek-flash keeps
   # image input, so the downgrade is safe for browser children).
   workers:
-    provider: deepseek-official
+    provider: deepseek-account
     model: deepseek-flash
     reasoningEffort: max
   # One-shot degradation chain for terminal QUOTA / RATE_LIMIT failures.
   fallback:
-    - provider: deepseek-official
+    - provider: deepseek-account
       model: deepseek-flash
+  # Per-agent-preset routes (workspace-policy). A session created with the
+  # cursor/vv-controller preset — and every child it delegates, which composes
+  # the cursor/vv-worker child preset — runs on the Cursor provider from the
+  # cursor-to-dsh plugin instead of the default/workers routes above.
+  # `default` is the Cursor Default (auto) model id from the provider catalog.
+  presets:
+    "cursor/vv-controller":
+      provider: cursor
+      model: default
+    "cursor/vv-worker":
+      provider: cursor
+      model: default

@@ -329,7 +329,7 @@
                   modelDiscovery: true
                   agentPreset: vv-worker
                   agentOptions:
-                    provider: deepseek-official
+                    provider: deepseek-account
                     model: deepseek-flash
                     reasoningEffort: max
               # Fork is deliberately NOT model-pinned: a fork child continues
@@ -543,7 +543,7 @@
                   toolName: subagent_browser
                   agentPreset: browser-subagent
                   agentOptions:
-                    provider: deepseek-official
+                    provider: deepseek-account
                     model: deepseek-flash
                     reasoningEffort: max
               - id: tool-subagent-codex
