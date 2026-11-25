@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Subagent model badge",
+    "description": "Shows which provider and model a subagent session actually runs on, as an id such as deepseek-account/deepseek-flash, in the ambient dock below that session's composer. Ordinary sessions render nothing. The value comes from the session's modelSelection projection: it is the route of the latest real request (or the pending next one), not the preset or workspace configuration. A pending switch appears after the current id, marked next."
+  }
+}

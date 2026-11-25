@@ -1,0 +1,6 @@
+# dsh-subagent-model-badge: one Client-only row. The badge renders inside the
+# session-scoped `conversation.composer.dock` slot of a subagent session and
+# renders nothing for ordinary sessions.
+- insert:
+    - id: subagent-model-badge
+      name: dsh-subagent-model-badge
