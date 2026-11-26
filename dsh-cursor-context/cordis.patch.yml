@@ -1,0 +1,21 @@
+# dsh-cursor-context bundle patch.
+#
+# One host plugin row. It finds the already registered adapter of the configured
+# provider on `llm.adapters`, wraps that instance's `resolveModel`, and rewrites
+# `context.contextWindow` for the models named below. No client half, no profile
+# files, no state of its own.
+- insert:
+    - id: cursor-context
+      name: dsh-cursor-context
+      config:
+        enabled: true
+        # Route whose adapter is wrapped. The Cursor bundle registers "cursor".
+        provider: cursor
+        # Capacity recorded for a model whose Cursor catalog entry advertises no
+        # `context` parameter. Such models would otherwise get the adapter's flat
+        # 200000 fallback, which compacts the history far too early.
+        defaultContextWindow: 1048576
+        # Exact per-model capacities. An entry here wins over the default and is
+        # also applied to a model that does advertise its own tiers.
+        contextWindows:
+          deepseek-v41-flash-1017: 1048576

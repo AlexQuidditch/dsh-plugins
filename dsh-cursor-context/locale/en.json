@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Cursor context window",
+    "description": "Records the real context capacity of Cursor models that advertise none, so compaction starts at the true limit instead of the adapter's flat 200k fallback."
+  }
+}

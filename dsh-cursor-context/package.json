@@ -1,0 +1,35 @@
+{
+  "name": "dsh-cursor-context",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH plugin bundle: records the real context window of Cursor models whose catalog entry advertises no capacity tier, replacing the adapter's flat 200k fallback with a per-model or provider-wide value.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/config.js",
+    "lib/ldd.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/config.test.mjs && node activation.test.mjs"
+  },
+  "license": "MIT"
+}
