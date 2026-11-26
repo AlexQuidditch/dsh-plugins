@@ -1,0 +1,62 @@
+{
+  "name": "@alexquidditch/dsh-spec-guard",
+  "version": "0.2.1",
+  "private": false,
+  "description": "GRACE markup engine: deterministic audit, ESLint rules, and a repo-wide CLI with a baseline ratchet. Shared by the DSH spec_guard tools and foundation.",
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.5.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexQuidditch/dsh-plugins.git",
+    "directory": "packages/dsh-spec-guard"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/grace.d.ts",
+      "default": "./lib/grace.js"
+    },
+    "./grace": {
+      "types": "./lib/grace.d.ts",
+      "default": "./lib/grace.js"
+    },
+    "./eslint": {
+      "types": "./lib/eslint.d.ts",
+      "default": "./lib/eslint.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-spec-guard": "./lib/cli.js"
+  },
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node test/eslint.test.mjs && node test/cli.test.mjs",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "eslint": "^9.35.0"
+  },
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "peerDependenciesMeta": {
+    "eslint": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,34 @@
+name: Publish @alexquidditch/dsh-spec-guard
+
+# The package is published to GitHub Packages. Local publishing needs a token with
+# write:packages + read:packages; this workflow uses the repository GITHUB_TOKEN.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'dsh-spec-guard-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/dsh-spec-guard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: https://npm.pkg.github.com
+          scope: '@alexquidditch'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm publish --no-git-checks --registry https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
